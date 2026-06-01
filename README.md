@@ -2,21 +2,48 @@
 
 本项目基于 [`Negai-ai/AgentClaw`](https://github.com/Negai-ai/AgentClaw) 二次开发。
 
-P3394 Runtime Agent is a local general-purpose agent platform packaged on top of AgentClaw. It keeps AgentClaw's workflow runtime, tool execution, model configuration, knowledge base, scheduler, tracing, Admin API, and dashboard, while making the P3394 Runtime Agent the default main entry.
+P3394 Runtime Agent 是在 AgentClaw 底座上改出来的个人/企业通用智能体平台。它不是从 0 重写框架，而是在原版 AgentClaw 已有的工作流、模型调用、工具执行、知识库、调度器、追踪、Admin API 和 Dashboard 之上，新增一个以 P3394 文档为参考的主智能体、记忆图谱、本地知识库和可部署项目包装。
+
+## 这个项目加了什么
+
+相比原版 AgentClaw，这个仓库主要新增和改造了这些内容：
+
+| 模块 | 新增内容 | 位置 |
+| --- | --- | --- |
+| P3394 主智能体 | 新增 `P3394 Runtime Agent`，作为默认主入口，参考本地 `P3394-v0.9.0-combined(2).md` 的 manifest、UMF、session、capability router、audit trail 思路 | `agentclaw/agent_square/p3394_runtime_agent/`、`local-demo/agents/p3394_runtime_agent/` |
+| AgentClaw 风格聊天入口 | 把首页入口改成 `/dashboard/p3394-agent`，保留和 AgentClaw 原版相近的聊天体验，不做复杂弹窗 | `agentclaw/admin-dashboard/src/views/P3394Agent.vue` |
+| P3394 工作台 | 在聊天页右侧加可折叠工作台，只显示当前需要的内容：文件产物、本地知识库、执行记录 | `P3394Agent.vue`、`/admin/p3394/*` |
+| 本地知识库 | 支持导入本地 Markdown、文本、PDF、DOCX 等文件，写入 P3394 本地知识条目 | `p3394_knowledge_import.py`、`p3394_local_memory.py` |
+| 记忆图谱 | 新增独立“记忆图谱”页面，用 Sigma.js + Graphology 渲染本地记忆网络，节点和关系落 SQLite | `agentclaw/admin-dashboard/src/views/MemoryGraph.vue` |
+| 每日记忆 Markdown | 可以生成每日记忆 `.md` 文件，并把每日记录同步到记忆图谱里 | `p3394_local_memory.py`、`/admin/p3394/daily-memory/*` |
+| 执行记录 | 记录 P3394 任务历史、角色轨迹、工具调用、文件上下文和执行摘要 | `p3394_execution_records.py`、`p3394_tool_records.py`、`p3394_file_context.py` |
+| 命令和文件工具 | 接入 AgentClaw 内置工具能力，让 P3394 Agent 能读目录、读写文件、分析代码、执行 shell/PowerShell/Python/JS、查看 Git 状态 | `agentclaw/mcp/builtin_servers/skill_tools.py` |
+| 模型诊断和配置 | 修复模型环境变量展开，Docker 下可用 `.env` 注入模型名、Base URL 和 API Key | `agentclaw/model/manager.py`、`local-demo/models.example.json` |
+| Docker 打包 | 新增 Dockerfile、根目录 docker-compose、环境变量模板，支持一键部署完整栈 | `Dockerfile`、`docker-compose.yml`、`.env.example` |
+
+## 和原版 AgentClaw 的区别
+
+原版 AgentClaw 是通用 Agent/Workflow 框架；这个项目是在它上面包装出的 P3394 专用版本：
+
+- 默认入口不是原版 Dashboard 首页，而是 `P3394 Runtime Agent`。
+- 保留原版 Agent Square、工作流、模型配置、工具执行能力，但新增 P3394 角色轨迹和执行记录。
+- 新增本地知识库、记忆图谱、每日记忆 Markdown，让项目能留下长期上下文。
+- 新增 P3394 Admin API：`/admin/p3394/artifacts`、`/admin/p3394/memory-graph`、`/admin/p3394/daily-memory` 等。
+- 新增部署包装：Docker Compose 和本机直接部署两条路线。
+
+## 当前能做什么
+
+- 像 AgentClaw 原版一样对话，并通过模型输出正常自然语言。
+- 让 Agent 读取项目文件、打开目录、分析代码、执行命令。
+- 把任务过程写成执行记录、工具记录、文件上下文。
+- 导入本地文件形成知识条目。
+- 在“记忆图谱”中查看项目事实、用户偏好、工具、文档、每日记忆之间的关系。
+- 用 Docker Compose 部署一套完整本地环境，或者直接用 Python 在本机运行。
 
 This project supports two deployment modes:
 
 - Docker Compose: one command starts the app, PostgreSQL, Redis, Milvus, MinIO, and Adminer.
 - Direct local deployment: run the Python service directly for Windows/local development.
-
-## What You Get
-
-- P3394 Runtime Agent as the default agent.
-- AgentClaw dashboard and original workflow runtime.
-- Local file, command, tool, and artifact execution paths.
-- Local knowledge base and memory graph pages.
-- Model configuration through `models.json` or dashboard settings.
-- Docker Compose deployment and direct Python deployment.
 
 ## Quick Access
 
