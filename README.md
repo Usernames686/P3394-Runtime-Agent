@@ -95,7 +95,6 @@ local-demo/models.json
 
 ## 后续方向
 
-- 增加自己的 logo、图标和项目名称配置页。
 - 把 P3394 任务历史、工具记录和文件上下文做成简洁侧栏。
 - 做一个初始化向导：检查模型、P3394 模板、命令工具、搜索工具是否可用。
 - 把 P3394 内部 Planner / Researcher / Executor / Reviewer 从“记录轨迹”升级为更真实的多 Agent 协作。
