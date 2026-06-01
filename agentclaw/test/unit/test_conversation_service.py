@@ -35,14 +35,28 @@ def test_conversation_service_returns_stable_fallbacks_without_database(monkeypa
         service.list_conversations,
         workflow_id="wf-1",
         source="public",
+        page=1,
+        page_size=5,
+    )
+    listed_page_2 = _run(
+        service.list_conversations,
+        workflow_id="wf-1",
+        source="public",
         page=2,
         page_size=5,
     )
     fetched = _run(service.get_conversation, "wf-1", created["id"])
-    updated = _run(service.update_conversation, "wf-1", created["id"])
-    deleted = _run(service.delete_conversation, "wf-1", created["id"])
+    updated = _run(
+        service.update_conversation,
+        "wf-1",
+        created["id"],
+        title="Updated",
+        messages=[{"role": "user", "content": "hello"}],
+    )
     feedback_submitted = _run(service.submit_feedback, created["id"], 0, "like")
     feedback = _run(service.get_feedback, created["id"])
+    deleted = _run(service.delete_conversation, "wf-1", created["id"])
+    deleted_fetch = _run(service.get_conversation, "wf-1", created["id"])
     summary = _run(service.get_feedback_summary_map, ["wf-1", "", "wf-2"])
 
     assert created["id"].startswith("conv_")
@@ -52,16 +66,70 @@ def test_conversation_service_returns_stable_fallbacks_without_database(monkeypa
     assert created["owner_id"] == "owner-1"
     assert created["user_id"] == "user-1"
     assert created["tenant_id"] == "tenant-1"
-    assert listed == {"conversations": [], "total": 0, "page": 2, "page_size": 5}
-    assert fetched is None
-    assert updated is None
+    assert listed["total"] == 1
+    assert listed["conversations"][0]["id"] == created["id"]
+    assert listed_page_2 == {"conversations": [], "total": 1, "page": 2, "page_size": 5}
+    assert fetched["id"] == created["id"]
+    assert updated["title"] == "Updated"
+    assert updated["messages"] == [{"role": "user", "content": "hello"}]
     assert deleted is True
-    assert feedback_submitted is False
-    assert feedback == {}
+    assert deleted_fetch is None
+    assert feedback_submitted is True
+    assert feedback == {0: "like"}
     assert summary == {
         "wf-1": {"like_count": 0, "dislike_count": 0},
         "wf-2": {"like_count": 0, "dislike_count": 0},
     }
+
+
+def test_conversation_service_persists_to_sqlite_without_database(monkeypatch, tmp_path):
+    from agentclaw.api.services import conversation_service
+
+    monkeypatch.setattr(conversation_service, "get_database", lambda: None)
+    sqlite_path = tmp_path / "agentclaw-local.db"
+    service = ConversationService(sqlite_path=sqlite_path)
+
+    created = _run(
+        service.create_conversation,
+        workflow_id="p3394_runtime_agent",
+        title="P3394 local history",
+        source="admin",
+        owner_id="owner-1",
+    )
+    updated = _run(
+        service.update_conversation,
+        "p3394_runtime_agent",
+        created["id"],
+        messages=[{"role": "assistant", "content": "saved"}],
+        source="admin",
+    )
+    feedback_submitted = _run(service.submit_feedback, created["id"], 0, "like")
+
+    reloaded = ConversationService(sqlite_path=sqlite_path)
+    listed = _run(
+        reloaded.list_conversations,
+        workflow_id="p3394_runtime_agent",
+        source="admin",
+        owner_id="owner-1",
+    )
+    fetched = _run(
+        reloaded.get_conversation,
+        "p3394_runtime_agent",
+        created["id"],
+        source="admin",
+        owner_id="owner-1",
+    )
+    feedback = _run(reloaded.get_feedback, created["id"])
+    summary = _run(reloaded.get_feedback_summary_map, ["p3394_runtime_agent"])
+
+    assert sqlite_path.exists()
+    assert updated["messages"] == [{"role": "assistant", "content": "saved"}]
+    assert feedback_submitted is True
+    assert listed["total"] == 1
+    assert listed["conversations"][0]["id"] == created["id"]
+    assert fetched["messages"] == [{"role": "assistant", "content": "saved"}]
+    assert feedback == {0: "like"}
+    assert summary == {"p3394_runtime_agent": {"like_count": 1, "dislike_count": 0}}
 
 
 class FakeConversationPool:

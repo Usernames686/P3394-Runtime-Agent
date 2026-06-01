@@ -54,12 +54,12 @@
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><path d="M12 19v3"/><path d="M8 22h8"/></svg>
             </button>
-            <button class="toolbar-icon-btn danger-hover" :title="$t('chatInput.clearConversation')" @click="$emit('clear')">
+            <button v-if="showClearButton" class="toolbar-icon-btn danger-hover" :title="$t('chatInput.clearConversation')" @click="$emit('clear')">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             </button>
           </div>
           <div class="toolbar-right">
-            <button class="context-meter" type="button" :disabled="!canCompressContext" :title="contextMeterTitle" @click="$emit('compress-context')">
+            <button v-if="showContextMeter" class="context-meter" type="button" :disabled="!canCompressContext" :title="contextMeterTitle" @click="$emit('compress-context')">
               <div class="context-meter-head">
                 <span class="context-label">{{ $t('chatInput.context') }}</span>
                 <strong class="context-value mono-font">{{ contextSummary }}</strong>
@@ -102,6 +102,9 @@ export default {
     inputError: { type: String, default: '' },
     canCompressContext: { type: Boolean, default: false },
     inputModes: { type: Array, default: null },
+    showClearButton: { type: Boolean, default: true },
+    showContextMeter: { type: Boolean, default: true },
+    confirmActions: { type: Boolean, default: true },
   },
   emits: ['update:modelValue', 'send', 'action', 'attach', 'speech-input', 'clear', 'remove-file', 'drop-files', 'compress-context'],
   data() {
@@ -171,7 +174,7 @@ export default {
     },
     onInputAction(mode) {
       if (!mode || !this.enabled || this.isStreaming) return
-      if (mode.confirm && !window.confirm(mode.label)) return
+      if (this.confirmActions && mode.confirm && !window.confirm(mode.label)) return
       const value = Object.prototype.hasOwnProperty.call(mode, 'value') ? mode.value : mode.label
       this.$emit('action', { label: mode.label, value, mode })
     },

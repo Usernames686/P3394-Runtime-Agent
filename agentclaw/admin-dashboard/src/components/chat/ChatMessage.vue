@@ -58,10 +58,10 @@
 
     <!-- 助手消息 -->
     <div v-else class="message">
-      <div class="message-avatar">AC</div>
+      <div class="message-avatar">{{ assistantInitials }}</div>
       <div class="message-content">
         <div class="message-header">
-          <span class="agent-name">AgentClaw</span>
+          <span class="agent-name">{{ assistantName }}</span>
           <span class="mono-font">{{ formatTime(msg.timestamp) }}</span>
         </div>
 
@@ -118,6 +118,7 @@
                       <span>{{ step.name }}{{ step.elapsed ? ` (${step.elapsed})` : '' }}</span>
                       <svg class="expand-chevron" :class="{ rotated: step.expanded }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
                     </div>
+                    <CodexStepList :step="step" />
                     <div v-if="step.expanded && (step.inputs || step.outputs || step.error)" class="node-io-panel mono-font">
                       <div v-if="step.inputs && Object.keys(step.inputs).length" class="io-section">
                         <JsonCodeBlock :label="$t('chatMessage.input')" :value="step.inputs" />
@@ -212,6 +213,7 @@
                     <span>{{ step.name }}{{ step.elapsed ? ` (${step.elapsed})` : '' }}</span>
                     <svg class="expand-chevron" :class="{ rotated: step.expanded }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
                   </div>
+                  <CodexStepList :step="step" />
                   <div v-if="step.expanded && (step.inputs || step.outputs || step.error)" class="node-io-panel mono-font">
                     <div v-if="step.inputs && Object.keys(step.inputs).length" class="io-section">
                       <JsonCodeBlock :label="$t('chatMessage.input')" :value="step.inputs" />
@@ -274,6 +276,7 @@
 
         <!-- 直接工具调用 (无 nodeSteps 时) -->
         <div v-else-if="hasToolCalls && !processCollapsed" class="agent-step">
+          <CodexStepList :tools="msg.toolCalls" />
           <div class="tool-group">
             <div
               v-for="(item, ti) in getToolGroupItems(msg.toolCalls)"
@@ -286,6 +289,14 @@
               <span class="tool-name">{{ item.name }}</span>
               <span v-if="item.count > 1" class="tool-args-summary">×{{ item.count }}</span>
             </div>
+          </div>
+          <div v-if="inlineCommandTools.length" class="inline-command-results">
+            <CommandResultCard
+              v-for="(tool, ti) in inlineCommandTools"
+              :key="tool.id || `${tool.name || 'command'}-${ti}`"
+              :tool="tool"
+              embedded
+            />
           </div>
           <ToolDetailsPanel
             v-if="selectedTool"
@@ -373,19 +384,24 @@
 </template>
 
 <script>
+import CommandResultCard from './CommandResultCard.vue'
+import CodexStepList from './CodexStepList.vue'
 import ToolDetailsPanel from './ToolDetailsPanel.vue'
 import JsonCodeBlock from './JsonCodeBlock.vue'
 import { formatTime as formatLocalizedTime } from '../../composables/useFormatters'
+import { normalizeCommandResult } from '../../utils/commandResult'
 import { renderMarkdownSafe } from '../../utils/sanitize'
 
 export default {
   name: 'ChatMessage',
-  components: { ToolDetailsPanel, JsonCodeBlock },
+  components: { CommandResultCard, CodexStepList, ToolDetailsPanel, JsonCodeBlock },
   props: {
     msg: { type: Object, required: true },
     processCollapsed: { type: Boolean, default: false },
     ttsAvailable: { type: Boolean, default: false },
     ttsState: { type: String, default: '' },
+    assistantName: { type: String, default: 'AgentClaw' },
+    assistantInitials: { type: String, default: 'AC' },
   },
   emits: ['copy', 'edit', 'feedback', 'toggle-reasoning', 'approve', 'toggle-process-view', 'speak'],
   data() {
@@ -397,6 +413,9 @@ export default {
     },
     hasToolCalls() {
       return this.msg.toolCalls && this.msg.toolCalls.length > 0 && !this.hasSteps
+    },
+    inlineCommandTools() {
+      return (this.msg.toolCalls || []).filter(tool => normalizeCommandResult(tool))
     },
     hasSegments() {
       return this.msg.nodeSteps && this.msg.nodeSteps.some(s => s.segments && s.segments.length > 0)
@@ -410,7 +429,7 @@ export default {
     },
     processHasFailed() {
       return !!(this.msg.nodeSteps || []).some(step => this.isStepFailed(step))
-        || !!(this.msg.toolCalls || []).some(tool => ['failed', 'error', 'cancelled'].includes(String(tool.status || '').toLowerCase()))
+        || !!(this.msg.toolCalls || []).some(tool => normalizeCommandResult(tool)?.failed || ['failed', 'error', 'cancelled'].includes(String(tool.status || '').toLowerCase()))
     },
     processSummaryState() {
       if (this.processHasFailed) return 'failed'
@@ -591,7 +610,7 @@ export default {
         item.count += 1
         item.tools.push(tool)
         if (tool?.status === 'running') item.running = true
-        if (tool?.status === 'failed') item.failed = true
+        if (normalizeCommandResult(tool)?.failed || tool?.status === 'failed') item.failed = true
       }
       groups.forEach(item => {
         const ids = item.tools.map((tool, index) => tool?.id || `${item.name}-${index}`).join('|')
@@ -1139,6 +1158,13 @@ export default {
 .tool-group {
   gap: 8px;
   margin: 0;
+}
+
+.inline-command-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
 .mini-thinking {

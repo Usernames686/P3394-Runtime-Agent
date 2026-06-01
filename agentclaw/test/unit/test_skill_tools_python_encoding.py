@@ -58,3 +58,47 @@ async def test_shell_tool_encodes_windows_powershell_command_with_unicode(tmp_pa
     decoded_script = base64.b64decode(encoded).decode("utf-16le")
     assert "*** 个人简历" in decoded_script
     assert "[Console]::OutputEncoding" in decoded_script
+    assert "$ProgressPreference = 'SilentlyContinue'" in decoded_script
+
+
+@pytest.mark.asyncio
+async def test_powershell_tool_executes_direct_encoded_command_with_unicode(tmp_path: Path, monkeypatch):
+    server = SkillToolsServer(working_dir=str(tmp_path), project_dir=str(tmp_path))
+    captured = {}
+
+    async def fake_run_exec_process(cmd, *, cwd, env, timeout):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["env"] = env
+        return "ok\n", "", 0
+
+    monkeypatch.setattr(skill_tools_module.sys, "platform", "win32")
+    monkeypatch.setattr(server, "_run_exec_process", fake_run_exec_process)
+
+    output = await server._execute_powershell({"command": "Write-Output 'P3394 个人智能体'"})
+
+    assert output == "ok\n"
+    assert captured["cmd"][:3] == ["powershell", "-NoProfile", "-NonInteractive"]
+    assert "-EncodedCommand" in captured["cmd"]
+    encoded = captured["cmd"][captured["cmd"].index("-EncodedCommand") + 1]
+    decoded_script = base64.b64decode(encoded).decode("utf-16le")
+    assert "P3394 个人智能体" in decoded_script
+    assert "[Console]::OutputEncoding" in decoded_script
+    assert "$ProgressPreference = 'SilentlyContinue'" in decoded_script
+
+
+@pytest.mark.asyncio
+async def test_powershell_tool_suppresses_startup_progress_clixml(tmp_path: Path, monkeypatch):
+    server = SkillToolsServer(working_dir=str(tmp_path), project_dir=str(tmp_path))
+    progress_clixml = '#< CLIXML\r\n<Objs><Obj S="progress"><MS /></Obj></Objs>'
+
+    async def fake_run_exec_process(cmd, *, cwd, env, timeout):
+        return "ok\n", progress_clixml, 0
+
+    monkeypatch.setattr(skill_tools_module.sys, "platform", "win32")
+    monkeypatch.setattr(server, "_run_exec_process", fake_run_exec_process)
+
+    output = await server._execute_powershell({"command": "Write-Output ok"})
+
+    assert output == "ok\n"
+    assert "CLIXML" not in output

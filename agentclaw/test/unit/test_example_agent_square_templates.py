@@ -48,6 +48,668 @@ def test_example_workflows_are_packaged_as_template_library_apps():
         assert not (Path(app["app_dir"]) / ".env").exists()
 
 
+def test_p3394_runtime_agent_is_packaged_as_a_builtin_template():
+    from agentclaw.agent_square import get_claw_app
+
+    app = get_claw_app("p3394_runtime_agent")
+
+    assert app is not None
+    assert app["name"] == "P3394 Runtime Agent"
+    assert app["category"] == "standard"
+    assert app["workflow_id"] == "p3394_runtime_agent"
+    assert app["recommended_input"]
+    assert "P3394" in app["tags"]
+    assert Path(app["workflow_path"]).is_file()
+    assert Path(app["entry_path"]).is_file()
+
+
+def test_p3394_runtime_agent_registers_as_a_workflow():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        result = register_claw_app_workflows("p3394_runtime_agent")
+
+        assert result["registered_workflow_ids"] == ["p3394_runtime_agent"]
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        assert workflow is not None
+        structure = workflow.get_structure()
+        assert structure["user_input_field"] == "user_input"
+        user_input = next(field for field in structure["form_config"] if field["name"] == "user_input")
+        assert user_input["label"] == "输入任务，或直接让我运行命令"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+def test_p3394_runtime_agent_is_agentclaw_like_llm_agent():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.node.llm import LLMNode
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+
+        assert list(workflow._nodes) == ["p3394_init", "smart_prefilter", "agent", "p3394_finalize"]
+        agent = workflow._nodes["agent"]
+        finalize = workflow._nodes["p3394_finalize"]
+        assert isinstance(agent, LLMNode)
+        assert agent.agent_style == "agentic"
+        assert agent.user_prompt == "{p3394_init}"
+        assert agent.skills == "*"
+        assert agent.enable_builtin_skills is True
+        assert agent.tools == "*"
+        assert agent.enable_builtin_tools is True
+        assert agent.enable_memory is True
+        assert agent.stream is True
+        assert agent.output_to_user is True
+        assert agent.tools_filter_key == "__filtered_tools__"
+        assert agent.skills_filter_key == "__filtered_skill_names__"
+        assert finalize.output_to_user is False
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_init_exposes_langgraph_prompt_key():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {"user_input": "list project files", "relationship": "owner"},
+            WorkflowContext(thread_id="p3394-prompt"),
+        )
+
+        assert result["__p3394_complete__"] is False
+        assert "Internal P3394 routing context" in result["p3394_init"]
+        assert "User request:" in result["p3394_init"]
+        assert "Respond to the user normally" in result["p3394_init"]
+        assert "```json" not in result["p3394_init"]
+        assert "UMF-style Envelope" not in result["p3394_init"]
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_streams_user_visible_output():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+    from agentclaw.runtime.streaming.context import OutputChannel
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+
+        async with OutputChannel(
+            workflow_id=workflow.id,
+            thread_id="p3394-output",
+            stream_mode=True,
+        ) as channel:
+            await workflow.run(
+                {"user_input": "manifest.describe"},
+                WorkflowContext(thread_id="p3394-output"),
+                thread_id="p3394-output",
+            )
+
+        answer = channel.get_answer()
+        assert "# P3394 Manifest" in answer
+        assert "UMF-style Envelope" in answer
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_manifest_exposes_level2_contract():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {"user_input": "manifest.describe", "relationship": "owner"},
+            WorkflowContext(thread_id="p3394-manifest-v2"),
+        )
+
+        manifest = result["p3394_payload"]
+        capability_names = {capability["name"] for capability in manifest["capabilities"]}
+        responsibilities = manifest["channel_adapter"]["responsibilities"]
+
+        assert manifest["agent"]["conformance_level"] == "level_2_agentclaw_runtime"
+        assert manifest["default_input"]["entry_point"] == "handle_message"
+        assert responsibilities == [
+            "listen",
+            "extract_channel_unique_id",
+            "validate_security",
+            "resolve_service_principal",
+            "resolve_relationship",
+            "validate_semantic_blocks",
+            "normalize_to_umf",
+            "deliver_to_handle_message",
+        ]
+        assert {
+            "manifest.describe",
+            "message.normalize",
+            "session.create",
+            "session.fetch",
+            "session.close",
+            "audit.summary",
+            "conformance.check",
+            "command_execution",
+            "task.route",
+            "agent.delegate",
+        }.issubset(capability_names)
+        assert manifest["orchestration"]["mode"] == "route_then_execute"
+        assert {route["family"] for route in manifest["orchestration"]["routes"]} >= {
+            "code_command",
+            "document_analysis",
+            "knowledge_search",
+            "general_chat",
+        }
+        assert {"owner", "administrator", "peer", "client", "anonymous"} <= set(manifest["relationships"])
+        assert manifest["security_context_policy"]["levels"] == ["normal", "elevated"]
+        assert "semantic_block_constraints" in manifest
+        assert manifest["conformance"]["target_level"] == "level_2"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_standardizes_umf_input_and_output():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {
+                "user_input": "message.normalize",
+                "relationship": "client",
+                "umf_message": {
+                    "message_id": "msg-inbound-1",
+                    "canonical_session_id": "sess-existing",
+                    "parent_session_id": "sess-parent",
+                    "sender": {
+                        "principal": "alice@example.com",
+                        "service_principal": {
+                            "person": "alice@example.com",
+                            "org": "acme-corp",
+                            "role": "analyst",
+                        },
+                    },
+                    "metadata": {
+                        "channel": "workflow_api",
+                        "session_lifecycle": "open",
+                    },
+                    "body": {
+                        "content": "normalize this request",
+                        "input": {"topic": "supplier risk"},
+                    },
+                },
+            },
+            WorkflowContext(thread_id="p3394-normalize-v2"),
+        )
+
+        normalized = result["p3394_payload"]
+        response = result["p3394_response_message"]
+
+        assert normalized["message_id"] == "msg-inbound-1"
+        assert normalized["message_type"] == "agent.query"
+        assert normalized["canonical_session_id"] == "sess-existing"
+        assert normalized["parent_session_id"] == "sess-parent"
+        assert normalized["sender"]["principal"] == "alice@example.com"
+        assert normalized["sender"]["service_principal"] == {
+            "person": "alice@example.com",
+            "org": "acme-corp",
+            "role": "analyst",
+        }
+        assert normalized["body"]["content"] == "normalize this request"
+        assert normalized["body"]["input"] == {"topic": "supplier risk"}
+        assert normalized["metadata"]["channel"] == "workflow_api"
+        assert normalized["metadata"]["session_lifecycle"] == "open"
+        assert response["message_type"] == "agent.response"
+        assert response["in_reply_to"] == "msg-inbound-1"
+        assert response["canonical_session_id"] == "sess-existing"
+        assert response["body"]["capability"] == "message.normalize"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_session_lifecycle_audit_and_conformance_commands():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.agent_square.p3394_runtime_agent.agents import p3394_runtime_agent as p3394_module
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    p3394_module.SESSION_STORE.clear()
+    if hasattr(p3394_module, "AUDIT_EVENTS"):
+        p3394_module.AUDIT_EVENTS.clear()
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+        context = WorkflowContext(thread_id="p3394-session-v2")
+
+        created = await init_node.async_execute(
+            {"user_input": "session.create: contract review", "relationship": "owner"},
+            context,
+        )
+        session_id = created["p3394_payload"]["canonical_session_id"]
+
+        fetched = await init_node.async_execute(
+            {
+                "user_input": "session.fetch",
+                "relationship": "owner",
+                "umf_message": {"canonical_session_id": session_id},
+            },
+            context,
+        )
+        closed = await init_node.async_execute(
+            {
+                "user_input": "session.close",
+                "relationship": "owner",
+                "umf_message": {"canonical_session_id": session_id},
+            },
+            context,
+        )
+        audit = await init_node.async_execute(
+            {
+                "user_input": "audit.summary",
+                "relationship": "administrator",
+                "umf_message": {"canonical_session_id": session_id},
+            },
+            context,
+        )
+        conformance = await init_node.async_execute(
+            {"user_input": "conformance.check", "relationship": "owner"},
+            context,
+        )
+
+        assert created["p3394_payload"]["lifecycle"] == "open"
+        assert fetched["p3394_payload"]["canonical_session_id"] == session_id
+        assert fetched["p3394_payload"]["lifecycle"] == "open"
+        assert closed["p3394_payload"]["canonical_session_id"] == session_id
+        assert closed["p3394_payload"]["lifecycle"] == "closed"
+        assert closed["p3394_umf_message"]["message_type"] == "session.close"
+        assert audit["p3394_payload"]["total_events"] >= 4
+        assert {"session.create", "session.fetch", "session.close"} <= {
+            event["message_type"] for event in audit["p3394_payload"]["events"]
+        }
+        assert conformance["p3394_payload"]["target_level"] == "level_2"
+        assert conformance["p3394_payload"]["status"] == "pass"
+        assert all(check["status"] == "pass" for check in conformance["p3394_payload"]["checks"])
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_denies_unauthorized_capability_before_llm_execution():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {
+                "user_input": "run Get-Location",
+                "relationship": "anonymous",
+                "umf_message": {
+                    "capability": "command_execution",
+                    "body": {"content": "run Get-Location"},
+                },
+            },
+            WorkflowContext(thread_id="p3394-auth-v2"),
+        )
+
+        assert result["__p3394_complete__"] is True
+        assert result["p3394_payload"]["message_type"] == "agent.error"
+        assert result["p3394_payload"]["reason_code"] == "authorization_failed"
+        assert result["p3394_audit"]["status"] == "denied"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_authorized_command_execution_reaches_agentic_runtime():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {
+                "user_input": "run Get-Location",
+                "relationship": "owner",
+                "umf_message": {
+                    "capability": "command_execution",
+                    "message_type": "agent.command",
+                    "body": {"content": "run Get-Location"},
+                },
+            },
+            WorkflowContext(thread_id="p3394-command-v2"),
+        )
+
+        assert result["__p3394_complete__"] is False
+        assert result["p3394_umf_message"]["body"]["capability"] == "command_execution"
+        assert result["p3394_payload"]["runtime"] == "LLMNode(agent_style='agentic')"
+        assert "tools" in result["p3394_payload"]
+        assert "skills" in result["p3394_payload"]
+        assert "Use AgentClaw tools/skills when useful" in result["p3394_init"]
+        assert "Do not expose UMF, manifests, audit objects, or route JSON" in result["p3394_init"]
+        assert "Do not explain internal routing, sessions, audit, UMF, or role plans unless explicitly asked" in result["p3394_init"]
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_routes_tasks_to_agentclaw_targets():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        cases = [
+            ("task.route: analyze this PDF contract", "document_analysis", "doc_analyzer"),
+            ("task.route: search GitHub for agent protocol examples", "knowledge_search", "tool_agent"),
+            ("task.route: run pytest and fix code", "code_command", "agentic_runtime"),
+            ("task.route: Run this harmless command and report the output: echo p3394-smoke", "code_command", "agentic_runtime"),
+            ("task.route: hello, explain what you can do", "general_chat", "agentic_runtime"),
+        ]
+
+        for text, family, target in cases:
+            result = await init_node.async_execute(
+                {"user_input": text, "relationship": "owner"},
+                WorkflowContext(thread_id=f"p3394-route-{family}"),
+            )
+
+            route = result["p3394_payload"]["selected_route"]
+            assert result["__p3394_complete__"] is True
+            assert route["family"] == family
+            assert route["target"] == target
+            assert result["p3394_umf_message"]["body"]["capability"] == "task.route"
+            assert result["p3394_audit"]["details"]["route"]["family"] == family
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_routes_chinese_natural_requests_without_protocol_prefix():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        cases = [
+            ("帮我跑测试并修复代码", "code_command", "agentic_runtime"),
+            ("去网上搜索 P3394 的资料", "knowledge_search", "tool_agent"),
+            ("分析这个合同的风险", "document_analysis", "doc_analyzer"),
+        ]
+
+        for text, family, target in cases:
+            result = await init_node.async_execute(
+                {"user_input": text, "relationship": "owner"},
+                WorkflowContext(thread_id=f"p3394-natural-{family}"),
+            )
+
+            route = result["p3394_route"]
+            assert result["p3394_umf_message"]["body"]["capability"] == "task.route"
+            assert route["family"] == family
+            assert route["target"] == target
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_auto_delegates_natural_search_to_registered_tool_agent():
+    from agentclaw import Workflow
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    delegate = Workflow(
+        id="tool_agent",
+        name="Tool Agent",
+        inputs={"user_input": {"type": "string", "required": True}},
+        user_input="user_input",
+    )
+
+    @delegate.node(id="echo", output_to_user=False)
+    def echo_node(state):
+        return {"delegate_answer": f"tool-agent searched: {state.get('user_input')}"}
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    WorkflowRegistry.unregister("tool_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        WorkflowRegistry.register(delegate)
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {"user_input": "去网上搜索 P3394 的资料", "relationship": "owner"},
+            WorkflowContext(thread_id="p3394-auto-delegate-search"),
+        )
+
+        payload = result["p3394_payload"]
+        assert result["__p3394_complete__"] is True
+        assert result["p3394_route"]["family"] == "knowledge_search"
+        assert payload["status"] == "succeeded"
+        assert payload["target_workflow_id"] == "tool_agent"
+        assert payload["result_state"]["delegate_answer"] == "tool-agent searched: 去网上搜索 P3394 的资料"
+        assert result["p3394_audit"]["status"] == "delegated"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+        WorkflowRegistry.unregister("tool_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_delegation_streams_natural_answer_not_protocol_dump():
+    from agentclaw import Workflow
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+    from agentclaw.runtime.streaming.context import OutputChannel
+
+    delegate = Workflow(
+        id="tool_agent",
+        name="Tool Agent",
+        inputs={"user_input": {"type": "string", "required": True}},
+        user_input="user_input",
+    )
+
+    @delegate.node(id="echo", output_to_user=False)
+    def echo_node(state):
+        return {"delegate_answer": f"tool-agent searched: {state.get('user_input')}"}
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    WorkflowRegistry.unregister("tool_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        WorkflowRegistry.register(delegate)
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        user_input = "\u53bb\u7f51\u4e0a\u641c\u7d22 P3394 \u7684\u8d44\u6599"
+
+        async with OutputChannel(
+            workflow_id=workflow.id,
+            thread_id="p3394-natural-delegation-output",
+            stream_mode=True,
+        ) as channel:
+            await workflow.run(
+                {"user_input": user_input, "relationship": "owner"},
+                WorkflowContext(thread_id="p3394-natural-delegation-output"),
+                thread_id="p3394-natural-delegation-output",
+            )
+
+        answer = channel.get_answer()
+        assert f"tool-agent searched: {user_input}" in answer
+        assert "# P3394 Routed Delegation" not in answer
+        assert "## Payload" not in answer
+        assert "UMF-style Envelope" not in answer
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+        WorkflowRegistry.unregister("tool_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_regular_task_enters_agentic_runtime_with_route_context():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {"user_input": "run pytest and fix code", "relationship": "owner"},
+            WorkflowContext(thread_id="p3394-route-runtime"),
+        )
+
+        assert result["__p3394_complete__"] is False
+        assert result["p3394_umf_message"]["body"]["capability"] == "task.route"
+        assert result["p3394_payload"]["selected_route"]["family"] == "code_command"
+        assert result["p3394_payload"]["runtime"] == "LLMNode(agent_style='agentic')"
+        assert "Internal P3394 routing context" in result["p3394_init"]
+        assert "route: code_command -> agentic_runtime" in result["p3394_init"]
+        assert "Selected orchestration route" not in result["p3394_init"]
+        assert result["p3394_route"]["target"] == "agentic_runtime"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_delegates_to_registered_workflow_and_audits_target():
+    from agentclaw import Workflow
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    delegate = Workflow(
+        id="p3394_delegate_echo",
+        name="P3394 Delegate Echo",
+        inputs={"user_input": {"type": "string", "required": True}},
+        user_input="user_input",
+    )
+
+    @delegate.node(id="echo", output_to_user=False)
+    def echo_node(state):
+        return {"delegate_answer": f"delegated: {state.get('user_input')}"}
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    WorkflowRegistry.unregister("p3394_delegate_echo")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        WorkflowRegistry.register(delegate)
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {
+                "user_input": "agent.delegate",
+                "relationship": "owner",
+                "umf_message": {
+                    "capability": "agent.delegate",
+                    "message_type": "agent.command",
+                    "body": {
+                        "content": "delegate to echo",
+                        "input": {
+                            "target_workflow_id": "p3394_delegate_echo",
+                            "delegation_inputs": {"user_input": "hello child workflow"},
+                        },
+                    },
+                },
+            },
+            WorkflowContext(thread_id="p3394-delegate-v1"),
+        )
+
+        payload = result["p3394_payload"]
+        assert result["__p3394_complete__"] is True
+        assert payload["status"] == "succeeded"
+        assert payload["target_workflow_id"] == "p3394_delegate_echo"
+        assert payload["result_state"]["delegate_answer"] == "delegated: hello child workflow"
+        assert result["p3394_audit"]["status"] == "delegated"
+        assert result["p3394_audit"]["details"]["delegated_to"] == "p3394_delegate_echo"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+        WorkflowRegistry.unregister("p3394_delegate_echo")
+
+
+@pytest.mark.asyncio
+async def test_p3394_runtime_agent_denies_anonymous_delegation():
+    from agentclaw.agent_square import register_claw_app_workflows
+    from agentclaw.api.registry import WorkflowRegistry
+    from agentclaw.graph.context import WorkflowContext
+
+    WorkflowRegistry.unregister("p3394_runtime_agent")
+    try:
+        register_claw_app_workflows("p3394_runtime_agent")
+        workflow = WorkflowRegistry.get("p3394_runtime_agent")
+        init_node = workflow._nodes["p3394_init"]
+
+        result = await init_node.async_execute(
+            {
+                "user_input": "agent.delegate",
+                "relationship": "anonymous",
+                "umf_message": {
+                    "capability": "agent.delegate",
+                    "body": {"input": {"target_workflow_id": "hello_world"}},
+                },
+            },
+            WorkflowContext(thread_id="p3394-delegate-denied"),
+        )
+
+        assert result["__p3394_complete__"] is True
+        assert result["p3394_payload"]["reason_code"] == "authorization_failed"
+        assert result["p3394_audit"]["status"] == "denied"
+    finally:
+        WorkflowRegistry.unregister("p3394_runtime_agent")
+
+
 def test_legacy_examples_project_has_been_removed():
     assert not (PROJECT_ROOT / "agentclaw" / "examples").exists()
 

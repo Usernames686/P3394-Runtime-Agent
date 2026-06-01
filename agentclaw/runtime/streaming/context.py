@@ -343,6 +343,29 @@ class OutputChannel:
         if node_id:
             event["node_id"] = node_id
 
+        if self.workflow_id == "p3394_runtime_agent":
+            try:
+                from agentclaw.agent_square.p3394_runtime_agent.agents.p3394_tool_records import (
+                    record_p3394_tool_record,
+                )
+
+                record_p3394_tool_record(
+                    workflow_id=self.workflow_id,
+                    thread_id=self.thread_id,
+                    task_id=self.task_id,
+                    message_id=self.message_id,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    tool_arguments=tool_arguments,
+                    tool_result=tool_result,
+                    status=tool_status,
+                    duration_ms=duration_ms,
+                    batch_id=batch_id or "",
+                    node_id=node_id or "",
+                )
+            except Exception as exc:
+                logger.warning(f"Failed to persist P3394 tool record: {exc}")
+
         await self._push(event)
     
     async def push_harness_feedback(

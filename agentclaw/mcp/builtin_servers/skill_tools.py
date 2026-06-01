@@ -8,6 +8,7 @@ import locale
 import os
 import signal
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -145,10 +146,39 @@ def _build_windows_powershell_encoded_command(command: str) -> Optional[list[str
         "$__agentclawUtf8 = New-Object System.Text.UTF8Encoding $false; "
         "[Console]::OutputEncoding = $__agentclawUtf8; "
         "$OutputEncoding = $__agentclawUtf8; "
+        "$ProgressPreference = 'SilentlyContinue'; "
     )
     encoded = base64.b64encode((utf8_prelude + script).encode("utf-16le")).decode("ascii")
     prefix_args = [_strip_wrapping_quotes(part) for part in parts[1:command_index]]
     return [executable, *prefix_args, "-EncodedCommand", encoded]
+
+
+def _build_powershell_script_command(script: str, executable: str | None = None) -> list[str]:
+    """Build a direct PowerShell command with UTF-8 output configured."""
+    executable = executable or ("powershell" if sys.platform == "win32" else "pwsh")
+    prelude = (
+        "$__agentclawUtf8 = New-Object System.Text.UTF8Encoding $false; "
+        "[Console]::OutputEncoding = $__agentclawUtf8; "
+        "$OutputEncoding = $__agentclawUtf8; "
+        "$ProgressPreference = 'SilentlyContinue'; "
+    )
+    if sys.platform == "win32":
+        encoded = base64.b64encode((prelude + script).encode("utf-16le")).decode("ascii")
+        return [executable, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    return [executable, "-NoProfile", "-NonInteractive", "-Command", prelude + script]
+
+
+def _strip_powershell_progress_clixml(text: str) -> str:
+    """Drop Windows PowerShell startup progress CLIXML while keeping real errors."""
+    stripped = (text or "").strip()
+    if (
+        stripped.startswith("#< CLIXML")
+        and 'S="progress"' in stripped
+        and 'S="Error"' not in stripped
+        and 'S="warning"' not in stripped
+    ):
+        return ""
+    return text
 
 
 def _format_exception(exc: BaseException) -> str:
@@ -535,6 +565,32 @@ class SkillToolsServer:
                     }
                 ),
                 Tool(
+                    name="powershell",
+                    description=(
+                        "Execute a PowerShell command/script directly in the working directory. "
+                        "Use this for PowerShell-native commands on Windows instead of wrapping powershell inside shell. "
+                        "Output is forced to UTF-8 so CJK text and JSON payloads are preserved."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "PowerShell command or script content to execute."
+                            },
+                            "timeout": {
+                                "type": "number",
+                                "description": "Optional timeout in seconds. Defaults to 120 if omitted."
+                            },
+                            "executable": {
+                                "type": "string",
+                                "description": "Optional PowerShell executable. Defaults to powershell on Windows and pwsh elsewhere."
+                            }
+                        },
+                        "required": ["command"]
+                    }
+                ),
+                Tool(
                     name="read_file",
                     description="Preferred tool for reading existing local files relative to skill-tools working_dir. "
                                 "Use this for file inspection before choosing python or shell for computation or command execution. "
@@ -708,6 +764,118 @@ class SkillToolsServer:
                     }
                 ),
                 Tool(
+                    name="git_status",
+                    description=(
+                        "Show local git status for the current working_dir using "
+                        "`git status --short --branch`. Use this before summarizing local changes."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "timeout": {
+                                "type": "number",
+                                "description": "Optional timeout in seconds. Defaults to 20 if omitted.",
+                            }
+                        },
+                    },
+                ),
+                Tool(
+                    name="git_diff",
+                    description=(
+                        "Show git diff stat and patch for local changes. "
+                        "Pass path for one file or directory. Set staged=true to inspect staged changes."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Optional relative pathspec to limit the diff.",
+                            },
+                            "staged": {
+                                "type": "boolean",
+                                "description": "Use staged/index diff (`git diff --cached`). Default false.",
+                                "default": False,
+                            },
+                            "max_chars": {
+                                "type": "integer",
+                                "description": "Maximum patch characters to return. Defaults to 20000.",
+                                "default": 20000,
+                            },
+                            "timeout": {
+                                "type": "number",
+                                "description": "Optional timeout in seconds. Defaults to 20 if omitted.",
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="git_commit_suggestions",
+                    description=(
+                        "Summarize changed files and propose commit message candidates. "
+                        "This never runs git commit."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "max_files": {
+                                "type": "integer",
+                                "description": "Maximum changed files to include. Defaults to 30.",
+                                "default": 30,
+                            },
+                            "timeout": {
+                                "type": "number",
+                                "description": "Optional timeout in seconds. Defaults to 20 if omitted.",
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="project_overview",
+                    description=(
+                        "Inspect top-level project structure, common project markers, and git summary. "
+                        "Use this for quick local project analysis before deeper file reads."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Optional relative directory path. Defaults to working_dir.",
+                                "default": ".",
+                            },
+                            "max_entries": {
+                                "type": "integer",
+                                "description": "Maximum top-level entries to list. Defaults to 60.",
+                                "default": 60,
+                            },
+                        },
+                    },
+                ),
+                Tool(
+                    name="search_web",
+                    description=(
+                        "Search the web and return concise source titles, URLs, and snippets. "
+                        "Uses SEARXNG_BASE_URL when configured, otherwise falls back to DuckDuckGo HTML results. "
+                        "Use this when current online context or external documentation is needed."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Search query",
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum results to return. Defaults to 5.",
+                                "default": 5,
+                            },
+                        },
+                        "required": ["query"],
+                    },
+                ),
+                Tool(
                     name="read_skill_file",
                     description=(
                         "Read a skill's documentation file by skill name. "
@@ -793,6 +961,8 @@ class SkillToolsServer:
                     result = await self._execute_javascript(arguments)
                 elif name == "shell":
                     result = await self._execute_shell(arguments)
+                elif name == "powershell":
+                    result = await self._execute_powershell(arguments)
                 elif name == "read_file":
                     result = await self._read_file(arguments)
                 elif name == "update_memory":
@@ -805,6 +975,16 @@ class SkillToolsServer:
                     result = await self._write_code(arguments)
                 elif name == "list_files":
                     result = await self._list_files(arguments)
+                elif name == "git_status":
+                    result = await self._git_status(arguments)
+                elif name == "git_diff":
+                    result = await self._git_diff(arguments)
+                elif name == "git_commit_suggestions":
+                    result = await self._git_commit_suggestions(arguments)
+                elif name == "project_overview":
+                    result = await self._project_overview(arguments)
+                elif name == "search_web":
+                    result = await self._search_web(arguments)
                 elif name == "read_skill_file":
                     result = await self._read_skill_file(arguments)
                 elif name == "execute_sudo_command":
@@ -815,7 +995,19 @@ class SkillToolsServer:
                     result = f"Unknown tool: {name}"
                 
                 # 对于文件操作，添加工作目录提示
-                if name in ("python", "javascript", "shell", "write_file", "write_code", "execute_sudo_command"):
+                if name in (
+                    "python",
+                    "javascript",
+                    "shell",
+                    "powershell",
+                    "write_file",
+                    "write_code",
+                    "execute_sudo_command",
+                    "git_status",
+                    "git_diff",
+                    "git_commit_suggestions",
+                    "project_overview",
+                ):
                     result = cwd_info + result
                 
                 return [TextContent(type="text", text=str(result))]
@@ -952,7 +1144,7 @@ class SkillToolsServer:
             )
             stdout, stderr, returncode = (
                 (exec_result.stdout, exec_result.stderr, exec_result.returncode)
-                if sys.platform == "win32"
+                if isinstance(exec_result, subprocess.CompletedProcess)
                 else exec_result
             )
 
@@ -1149,7 +1341,57 @@ class SkillToolsServer:
         finally:
             if temp_script:
                 os.unlink(temp_script)
-    
+
+    async def _execute_powershell(self, args: dict) -> str:
+        """Execute PowerShell directly with UTF-8-safe output."""
+        command = str(args.get("command") or args.get("script") or "").strip()
+        if not command:
+            return "[Error] 'command' is required"
+
+        timeout = _read_timeout_arg(args)
+        executable = str(args.get("executable") or "").strip() or None
+        env_vars = os.environ.copy()
+        venv_bin = Path(sys.executable).parent
+        current_path = env_vars.get("PATH", "")
+        if str(venv_bin) not in current_path:
+            env_vars["PATH"] = str(venv_bin) + os.pathsep + current_path
+        venv_root = venv_bin.parent
+        if (venv_root / "pyvenv.cfg").exists():
+            env_vars["VIRTUAL_ENV"] = str(venv_root)
+
+        cmd = _build_powershell_script_command(command, executable=executable)
+        try:
+            shell_result = await self._run_exec_process(
+                cmd,
+                cwd=str(self.working_dir),
+                env=env_vars,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            return f"Execution timeout ({_format_seconds(timeout)}s)"
+        except FileNotFoundError:
+            return "[ERROR] PowerShell executable not found in PATH."
+
+        stdout, stderr, returncode = (
+            (shell_result.stdout, shell_result.stderr, shell_result.returncode)
+            if isinstance(shell_result, subprocess.CompletedProcess)
+            else shell_result
+        )
+        stdout_text = _decode_process_output(stdout)
+        stderr_text = _strip_powershell_progress_clixml(_decode_process_output(stderr))
+        if returncode != 0:
+            parts = [f"[ERROR] PowerShell command failed (exit code {returncode})"]
+            if stdout_text.strip():
+                parts.append(f"[stdout]\n{stdout_text}")
+            if stderr_text.strip():
+                parts.append(f"[stderr]\n{stderr_text}")
+            return "\n".join(parts)
+
+        result = stdout_text
+        if stderr_text:
+            result += f"\n[stderr]\n{stderr_text}"
+        return result if result else "(no output)"
+     
     async def _execute_shell(self, args: dict) -> str:
         """Execute shell command"""
         command = args.get("command", "")
@@ -1207,6 +1449,8 @@ class SkillToolsServer:
 
         stdout_text = _decode_process_output(stdout)
         stderr_text = _decode_process_output(stderr)
+        if powershell_exec_cmd:
+            stderr_text = _strip_powershell_progress_clixml(stderr_text)
         if returncode != 0:
             parts = [f"[ERROR] Shell command failed (exit code {returncode})"]
             if stdout_text.strip():
@@ -1230,6 +1474,424 @@ class SkillToolsServer:
             result += f"\n[stderr]\n{stderr_text}"
 
         return result if result else "(no output)"
+
+    def _git_pathspec(self, args: dict) -> tuple[list[str], str]:
+        path = str(args.get("path") or "").strip()
+        if not path:
+            return [], ""
+        if "\n" in path or "\r" in path:
+            raise ValueError("path must not contain newlines")
+        if Path(path).is_absolute():
+            raise ValueError("path must be relative to working_dir")
+        return ["--", path], f" -- {path}"
+
+    def _read_positive_int_arg(self, args: dict, name: str, default: int) -> int:
+        raw = args.get(name)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
+
+    def _truncate_tool_output(self, text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        return (
+            text[:max_chars].rstrip()
+            + f"\n\n[truncated] Output exceeded {max_chars} characters."
+        )
+
+    async def _run_git(self, git_args: list[str], *, timeout: float) -> tuple[int, str, str] | str:
+        git = shutil.which("git")
+        if not git:
+            return "[ERROR] git executable not found in PATH."
+
+        env_vars = os.environ.copy()
+        try:
+            result = await self._run_exec_process(
+                [git, *git_args],
+                cwd=str(self.working_dir),
+                env=env_vars,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            return f"[ERROR] git {' '.join(git_args)} timed out after {_format_seconds(timeout)}s"
+
+        stdout, stderr, returncode = (
+            (result.stdout, result.stderr, result.returncode)
+            if isinstance(result, subprocess.CompletedProcess)
+            else result
+        )
+        return returncode, _decode_process_output(stdout), _decode_process_output(stderr)
+
+    def _format_git_failure(self, command: str, returncode: int, stdout: str, stderr: str) -> str:
+        parts = [f"[ERROR] {command} failed (exit code {returncode})"]
+        if stdout.strip():
+            parts.append(f"[stdout]\n{stdout.strip()}")
+        if stderr.strip():
+            parts.append(f"[stderr]\n{stderr.strip()}")
+        if "not a git repository" in stderr.lower():
+            parts.append("[hint] working_dir is not inside a git repository.")
+        return "\n".join(parts)
+
+    def _summarize_short_status(self, status_text: str) -> str:
+        counts = {
+            "Modified": 0,
+            "Added": 0,
+            "Deleted": 0,
+            "Renamed": 0,
+            "Untracked": 0,
+            "Other": 0,
+        }
+        for line in status_text.splitlines():
+            if not line or line.startswith("##"):
+                continue
+            code = line[:2]
+            if code == "??":
+                counts["Untracked"] += 1
+            elif "M" in code:
+                counts["Modified"] += 1
+            elif "A" in code:
+                counts["Added"] += 1
+            elif "D" in code:
+                counts["Deleted"] += 1
+            elif "R" in code:
+                counts["Renamed"] += 1
+            else:
+                counts["Other"] += 1
+        summary = [f"{name}: {count}" for name, count in counts.items() if count]
+        return ", ".join(summary) if summary else "Clean working tree"
+
+    async def _git_status(self, args: dict) -> str:
+        timeout = _read_timeout_arg(args, default=20.0)
+        command = "git status --short --branch"
+        result = await self._run_git(["status", "--short", "--branch"], timeout=timeout)
+        if isinstance(result, str):
+            return result
+        returncode, stdout, stderr = result
+        if returncode != 0:
+            return self._format_git_failure(command, returncode, stdout, stderr)
+        output = stdout.strip() or "## unknown\n"
+        return (
+            f"{command}\n"
+            f"Summary: {self._summarize_short_status(output)}\n\n"
+            f"{output}"
+        )
+
+    async def _git_diff(self, args: dict) -> str:
+        timeout = _read_timeout_arg(args, default=20.0)
+        max_chars = self._read_positive_int_arg(args, "max_chars", 20000)
+        staged = bool(args.get("staged", False))
+        try:
+            pathspec, path_label = self._git_pathspec(args)
+        except ValueError as exc:
+            return f"[Error] git_diff: {exc}"
+
+        mode_args = ["--cached"] if staged else []
+        stat_args = ["diff", *mode_args, "--stat", *pathspec]
+        patch_args = ["diff", *mode_args, *pathspec]
+        stat_label = f"git diff{' --cached' if staged else ''} --stat{path_label}"
+        patch_label = f"git diff{' --cached' if staged else ''}{path_label}"
+
+        stat_result = await self._run_git(stat_args, timeout=timeout)
+        if isinstance(stat_result, str):
+            return stat_result
+        stat_code, stat_stdout, stat_stderr = stat_result
+        if stat_code != 0:
+            return self._format_git_failure(stat_label, stat_code, stat_stdout, stat_stderr)
+
+        patch_result = await self._run_git(patch_args, timeout=timeout)
+        if isinstance(patch_result, str):
+            return patch_result
+        patch_code, patch_stdout, patch_stderr = patch_result
+        if patch_code != 0:
+            return self._format_git_failure(patch_label, patch_code, patch_stdout, patch_stderr)
+
+        stat_text = stat_stdout.strip() or "(no diff stat)"
+        patch_text = patch_stdout.strip() or "(no diff)"
+        patch_text = self._truncate_tool_output(patch_text, max_chars)
+        return (
+            f"{stat_label}\n{stat_text}\n\n"
+            f"{patch_label}\n{patch_text}"
+        )
+
+    def _changed_files_from_status(self, status_text: str, max_files: int) -> list[str]:
+        files: list[str] = []
+        for line in status_text.splitlines():
+            if not line or line.startswith("##"):
+                continue
+            path = line[3:].strip()
+            if " -> " in path:
+                path = path.split(" -> ", 1)[-1].strip()
+            expanded_paths = [path]
+            candidate_dir = self.working_dir / path.rstrip("/\\")
+            if path.endswith(("/", "\\")) and candidate_dir.is_dir():
+                expanded_paths = [
+                    str(item.relative_to(self.working_dir)).replace("\\", "/")
+                    for item in sorted(candidate_dir.rglob("*"))
+                    if item.is_file()
+                ] or [path]
+            for expanded_path in expanded_paths:
+                if expanded_path and expanded_path not in files:
+                    files.append(expanded_path)
+                if len(files) >= max_files:
+                    break
+            if len(files) >= max_files:
+                break
+        return files
+
+    def _commit_message_candidates(self, files: list[str]) -> list[str]:
+        if not files:
+            return ["chore: refresh local workspace"]
+        lower_files = [item.lower().replace("\\", "/") for item in files]
+        if all(item.endswith((".md", ".mdx", ".txt")) or "/docs/" in f"/{item}" for item in lower_files):
+            scope = "docs"
+        elif any("test" in item or item.endswith((".spec.js", ".test.js", "_test.py")) for item in lower_files):
+            scope = "test"
+        elif any(item.endswith((".py", ".js", ".ts", ".vue", ".tsx", ".jsx")) for item in lower_files):
+            scope = "feat"
+        else:
+            scope = "chore"
+
+        primary = files[0].replace("\\", "/")
+        area = primary.split("/", 1)[0] if "/" in primary else Path(primary).stem
+        return [
+            f"{scope}: update {area}",
+            f"chore: sync {len(files)} local file{'s' if len(files) != 1 else ''}",
+            f"fix: refine {area} behavior",
+        ]
+
+    async def _git_commit_suggestions(self, args: dict) -> str:
+        timeout = _read_timeout_arg(args, default=20.0)
+        max_files = self._read_positive_int_arg(args, "max_files", 30)
+        status_result = await self._run_git(["status", "--short"], timeout=timeout)
+        if isinstance(status_result, str):
+            return status_result
+        status_code, status_stdout, status_stderr = status_result
+        if status_code != 0:
+            return self._format_git_failure("git status --short", status_code, status_stdout, status_stderr)
+
+        files = self._changed_files_from_status(status_stdout, max_files)
+        diff_result = await self._run_git(["diff", "--stat"], timeout=timeout)
+        diff_stat = ""
+        if not isinstance(diff_result, str):
+            diff_code, diff_stdout, diff_stderr = diff_result
+            if diff_code == 0:
+                diff_stat = diff_stdout.strip()
+            elif diff_stderr.strip():
+                diff_stat = f"[diff stat unavailable] {diff_stderr.strip()}"
+
+        changed = "\n".join(f"- {item}" for item in files) if files else "- (no changed files)"
+        suggestions = "\n".join(f"- {item}" for item in self._commit_message_candidates(files))
+        return (
+            "Changed files\n"
+            f"{changed}\n\n"
+            "Diff stat\n"
+            f"{diff_stat or '(no unstaged diff stat)'}\n\n"
+            "Suggested commit messages\n"
+            f"{suggestions}"
+        )
+
+    async def _project_overview(self, args: dict) -> str:
+        path = str(args.get("path") or ".").strip() or "."
+        max_entries = self._read_positive_int_arg(args, "max_entries", 60)
+        resolved_path, candidates = self._resolve_existing_path(path)
+        if not resolved_path:
+            searched = "\n".join(f"  - {candidate}" for candidate in candidates[:8])
+            return f"[Error] Directory not found: {path}\nSearched:\n{searched}"
+        if not resolved_path.is_dir():
+            return f"[Error] project_overview path is not a directory: {path}"
+
+        markers = [
+            "package.json",
+            "pnpm-lock.yaml",
+            "package-lock.json",
+            "yarn.lock",
+            "pyproject.toml",
+            "requirements.txt",
+            "uv.lock",
+            "README.md",
+            "README_CN.md",
+            ".git",
+            "Dockerfile",
+            "docker-compose.yml",
+        ]
+        found_markers = [marker for marker in markers if (resolved_path / marker).exists()]
+
+        entries = []
+        for item in sorted(resolved_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+            suffix = "/" if item.is_dir() else ""
+            entries.append(f"{item.name}{suffix}")
+            if len(entries) >= max_entries:
+                break
+
+        git_summary = "(not a git repository or git unavailable)"
+        if shutil.which("git"):
+            git_result = await self._run_git(["status", "--short", "--branch"], timeout=10.0)
+            if not isinstance(git_result, str):
+                git_code, git_stdout, git_stderr = git_result
+                if git_code == 0:
+                    first_line = git_stdout.splitlines()[0] if git_stdout.splitlines() else "## unknown"
+                    git_summary = f"{first_line}; {self._summarize_short_status(git_stdout)}"
+                elif git_stderr.strip():
+                    git_summary = git_stderr.strip().splitlines()[0]
+
+        return (
+            "Project overview\n"
+            f"Root: {resolved_path}\n\n"
+            "Markers\n"
+            + ("\n".join(f"- {marker}" for marker in found_markers) if found_markers else "- (none detected)")
+            + "\n\nTop-level entries\n"
+            + ("\n".join(f"- {entry}" for entry in entries) if entries else "- (empty)")
+            + "\n\nGit\n"
+            + git_summary
+        )
+
+    async def _search_web(self, args: dict) -> str:
+        query = str(args.get("query") or args.get("q") or "").strip()
+        if not query:
+            return "[Error] search_web validation failed: 'query' is required"
+        max_results = max(1, min(self._read_positive_int_arg(args, "max_results", 5), 10))
+
+        try:
+            results = await asyncio.to_thread(self._search_web_sync, query, max_results)
+        except Exception as exc:
+            return f"[Error] search_web failed: {exc}"
+
+        if not results:
+            return f"[Error] search_web returned no results for: {query}"
+
+        lines = [f"Web search results for: {query}"]
+        for index, item in enumerate(results[:max_results], start=1):
+            title = str(item.get("title") or "(untitled)").strip()
+            url = str(item.get("url") or "").strip()
+            snippet = str(item.get("snippet") or "").strip()
+            lines.append(f"{index}. {title}")
+            if url:
+                lines.append(f"   {url}")
+            if snippet:
+                lines.append(f"   {snippet}")
+        return "\n".join(lines)
+
+    def _search_web_sync(self, query: str, max_results: int) -> list[dict[str, str]]:
+        searxng_base = os.getenv("SEARXNG_BASE_URL", "").strip().rstrip("/")
+        if searxng_base:
+            return self._search_web_searxng_sync(searxng_base, query, max_results)
+        return self._search_web_duckduckgo_sync(query, max_results)
+
+    def _search_web_searxng_sync(self, base_url: str, query: str, max_results: int) -> list[dict[str, str]]:
+        import urllib.parse
+        import urllib.request
+
+        params = urllib.parse.urlencode({
+            "q": query,
+            "format": "json",
+            "language": "auto",
+            "safesearch": "1",
+        })
+        request = urllib.request.Request(
+            f"{base_url}/search?{params}",
+            headers={"User-Agent": "AgentClaw skill-tools search_web"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        results = []
+        for item in payload.get("results", []):
+            title = str(item.get("title") or "").strip()
+            url = str(item.get("url") or "").strip()
+            snippet = str(item.get("content") or item.get("snippet") or "").strip()
+            if title or url:
+                results.append({"title": title, "url": url, "snippet": snippet})
+            if len(results) >= max_results:
+                break
+        return results
+
+    def _search_web_duckduckgo_sync(self, query: str, max_results: int) -> list[dict[str, str]]:
+        import urllib.parse
+        import urllib.request
+        from html.parser import HTMLParser
+
+        class DuckDuckGoParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.results: list[dict[str, str]] = []
+                self._current: dict[str, str] | None = None
+                self._capture: str | None = None
+                self._chunks: list[str] = []
+
+            @staticmethod
+            def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+                for key, value in attrs:
+                    if key == "class" and value:
+                        return set(value.split())
+                return set()
+
+            @staticmethod
+            def _href(attrs: list[tuple[str, str | None]]) -> str:
+                for key, value in attrs:
+                    if key == "href" and value:
+                        return value
+                return ""
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                classes = self._classes(attrs)
+                if tag == "a" and "result__a" in classes:
+                    self._current = {"title": "", "url": self._href(attrs), "snippet": ""}
+                    self._capture = "title"
+                    self._chunks = []
+                elif self._current is not None and "result__snippet" in classes:
+                    self._capture = "snippet"
+                    self._chunks = []
+
+            def handle_data(self, data: str) -> None:
+                if self._capture:
+                    self._chunks.append(data)
+
+            def handle_endtag(self, tag: str) -> None:
+                if self._current is None or not self._capture:
+                    return
+                if self._capture == "title" and tag == "a":
+                    self._current["title"] = html.unescape(" ".join("".join(self._chunks).split()))
+                    self.results.append(self._current)
+                    self._capture = None
+                    self._chunks = []
+                elif self._capture == "snippet" and tag in {"a", "div"}:
+                    self._current["snippet"] = html.unescape(" ".join("".join(self._chunks).split()))
+                    self._capture = None
+                    self._chunks = []
+
+        params = urllib.parse.urlencode({"q": query})
+        request = urllib.request.Request(
+            f"https://duckduckgo.com/html/?{params}",
+            headers={"User-Agent": "Mozilla/5.0 AgentClaw skill-tools search_web"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            text = response.read().decode("utf-8", errors="replace")
+
+        parser = DuckDuckGoParser()
+        parser.feed(text)
+        results = []
+        for item in parser.results:
+            url = item.get("url", "")
+            if url.startswith("//"):
+                url = f"https:{url}"
+            parsed = urllib.parse.urlparse(url)
+            if parsed.path == "/l/":
+                query_params = urllib.parse.parse_qs(parsed.query)
+                url = query_params.get("uddg", [url])[0]
+            if item.get("title") or url:
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": url,
+                    "snippet": item.get("snippet", ""),
+                })
+            if len(results) >= max_results:
+                break
+        return results
     
     # File extensions that markitdown can handle
     MARKITDOWN_EXTS = {'.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.doc', '.ppt'}

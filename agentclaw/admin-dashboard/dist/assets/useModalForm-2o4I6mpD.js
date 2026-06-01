@@ -1,0 +1,1 @@
+import{E as c,r as o}from"./index-6-4nFwFC.js";function l(n){const e=o(!1),t=o(!1),s=c({...n()});function a(){Object.assign(s,n()),t.value=!1,e.value=!0}function r(u){Object.assign(s,u),t.value=!0,e.value=!0}function i(){e.value=!1}return{visible:e,isEdit:t,form:s,openCreate:a,openEdit:r,close:i}}export{l as u};

@@ -15,7 +15,14 @@ def test_admin_health_is_public(admin_api_client):
     response = admin_api_client.get("/admin/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "admin"}
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["service"] == "admin"
+    assert set(payload["features"]) >= {"knowledgebases", "scheduler", "channels"}
+    assert all(
+        isinstance(payload["features"][name]["available"], bool)
+        for name in ("knowledgebases", "scheduler", "channels")
+    )
 
 
 def test_admin_routes_require_admin_token(admin_api_client):
@@ -148,6 +155,44 @@ def test_admin_template_library_import_uses_service_dependency(admin_api_client,
 
     assert response.status_code == 200
     assert calls == [{"app_id": "turtle_soup", "overwrite": False}]
+    assert response.json()["registered"] is True
+    assert response.json()["workflow_id"] == "turtle_soup"
+
+
+def test_admin_template_library_repair_uses_service_dependency(admin_api_client, auth_tokens):
+    from agentclaw.api.routers.admin import dashboard as dashboard_router
+
+    calls = []
+
+    class FakeDashboardService:
+        async def repair_template_library_app(self, app_id):
+            calls.append({"app_id": app_id})
+            return {
+                "success": True,
+                "imported": True,
+                "registered": True,
+                "repaired": True,
+                "app_id": app_id,
+                "workflow_id": "turtle_soup",
+                "target_dir": "/project/agents/turtle_soup",
+                "workflow_file": "/project/agents/turtle_soup/agents/turtle_soup.py",
+                "init_path": "/project/agents/__init__.py",
+                "import_added": False,
+                "message": "模板已修复并加载为当前项目智能体。",
+            }
+
+    admin_api_client.app.dependency_overrides[
+        dashboard_router.get_dashboard_service
+    ] = lambda: FakeDashboardService()
+
+    response = admin_api_client.post(
+        "/admin/dashboard/template-library/apps/turtle_soup/repair",
+        headers=auth_header(auth_tokens.admin),
+    )
+
+    assert response.status_code == 200
+    assert calls == [{"app_id": "turtle_soup"}]
+    assert response.json()["repaired"] is True
     assert response.json()["registered"] is True
     assert response.json()["workflow_id"] == "turtle_soup"
 

@@ -57,6 +57,34 @@ class ModelUpdateRequest(BaseModel):
     timeout: Optional[int] = None
 
 
+class ModelDiagnostic(BaseModel):
+    """Model runtime readiness diagnostic."""
+
+    id: str
+    provider: str
+    model: str
+    model_type: str
+    status: str = "standby"
+    is_current: bool = False
+    api_key_set: bool = False
+    base_url_set: bool = False
+    ready: bool = False
+    reason_code: str = "request_failed"
+    message: str
+    suggested_fix: Optional[str] = None
+    latency_ms: Optional[int] = None
+    sample: Optional[str] = None
+
+
+class ModelDiagnosticsResponse(BaseModel):
+    """Configured model readiness diagnostics."""
+
+    current_model_id: Optional[str] = None
+    default_model_id: Optional[str] = None
+    fallback_model_id: Optional[str] = None
+    models: List[ModelDiagnostic]
+
+
 class ModelFallbackRequest(BaseModel):
     """手动降级请求"""
     reason: Optional[str] = "手动触发"

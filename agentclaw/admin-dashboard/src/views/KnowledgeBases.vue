@@ -3,10 +3,17 @@
     <PageHeader :title="t('knowledgebases.title')" :show-refresh="false">
       <template #actions>
         <n-text depth="3" style="font-size: 13px;">{{ t('knowledgebases.count', { count: knowledgebases.length }) }}</n-text>
-        <n-button type="primary" size="small" @click="openCreate">+ {{ t('knowledgebases.create') }}</n-button>
+        <n-button v-if="serviceStatusReady && !serviceUnavailable" type="primary" size="small" @click="openCreate">+ {{ t('knowledgebases.create') }}</n-button>
       </template>
     </PageHeader>
 
+    <FeatureUnavailable
+      v-if="serviceUnavailable"
+      title="知识库服务未启用"
+      description="当前本地运行环境没有初始化知识库后端，所以这个入口已从侧边栏隐藏，避免点开后只看到请求失败。"
+      :reason="serviceUnavailableReason"
+    />
+    <template v-else-if="serviceStatusReady">
     <!-- Stats -->
     <div class="stat-row">
       <div class="stat-card">
@@ -56,6 +63,7 @@
         <n-button type="primary" size="small" @click="openCreate">{{ t('knowledgebases.create') }}</n-button>
       </div>
     </n-spin>
+    </template>
 
     <!-- Create/Edit Modal -->
     <n-modal v-model:show="modal.visible.value" preset="card"
@@ -118,8 +126,10 @@ import {
   NSpace, NText, NSpin, NModal, NPopconfirm, useMessage,
 } from 'naive-ui'
 import PageHeader from '../components/PageHeader.vue'
+import FeatureUnavailable from '../components/FeatureUnavailable.vue'
 import { knowledgebaseApi, modelsApi } from '../api'
 import { useModalForm } from '../composables/useModalForm'
+import { useServiceAvailability } from '../composables/useServiceAvailability'
 
 const router = useRouter()
 const message = useMessage()
@@ -128,6 +138,17 @@ const knowledgebases = ref([])
 const rerankModels = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const serviceAvailability = useServiceAvailability({ autoLoad: false })
+const serviceStatusReady = computed(() => Boolean(serviceAvailability.health.value || serviceAvailability.error.value))
+const serviceUnavailable = computed(() => {
+  if (serviceAvailability.error.value && !serviceAvailability.health.value) return true
+  if (!serviceAvailability.health.value) return false
+  return !serviceAvailability.isAvailable('knowledgebases', { fallback: false })
+})
+const serviceUnavailableReason = computed(() => (
+  serviceAvailability.reason('knowledgebases') ||
+  (serviceAvailability.error.value ? '无法读取 /admin/health 状态，已暂停此入口以避免无效请求。' : '')
+))
 const modeOptions = computed(() => ([
   { value: 'hybrid', label: t('knowledgebases.modes.hybrid.label'), desc: t('knowledgebases.modes.hybrid.description') },
   { value: 'dense', label: t('knowledgebases.modes.dense.label'), desc: t('knowledgebases.modes.dense.description') },
@@ -220,6 +241,7 @@ function extractError(error, fallback) {
 }
 
 async function fetchKnowledgebases() {
+  if (!serviceStatusReady.value || serviceUnavailable.value) return
   loading.value = true
   try { const res = await knowledgebaseApi.list(); knowledgebases.value = (res.knowledgebases || []).map(normalizeKnowledgebase) }
   catch (e) { message.error(extractError(e, t('knowledgebases.messages.fetchListFailed'))) }
@@ -236,7 +258,11 @@ async function fetchModels() {
   }
 }
 
-onMounted(() => Promise.all([fetchKnowledgebases(), fetchModels()]))
+onMounted(async () => {
+  await serviceAvailability.refresh()
+  if (serviceUnavailable.value) return
+  await Promise.all([fetchKnowledgebases(), fetchModels()])
+})
 </script>
 <style scoped>
 /* Stats row */

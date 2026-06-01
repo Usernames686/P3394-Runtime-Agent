@@ -123,6 +123,63 @@ def test_admin_model_management_routes_use_model_service(admin_api_client, auth_
     assert ("fallback", "model-1", "contract-test") in calls
 
 
+def test_admin_model_diagnostics_routes_use_model_service(admin_api_client, auth_tokens):
+    from agentclaw.api.routers.admin import models as models_router
+
+    diagnostic = {
+        "id": "model-1",
+        "provider": "openai",
+        "model": "gpt-test",
+        "model_type": "chat",
+        "status": "primary",
+        "is_current": True,
+        "api_key_set": True,
+        "base_url_set": False,
+        "ready": True,
+        "reason_code": "ok",
+        "message": "model is ready",
+        "suggested_fix": None,
+        "latency_ms": None,
+        "sample": None,
+    }
+    calls: list[tuple] = []
+
+    class FakeModelService:
+        def get_model_diagnostics(self):
+            calls.append(("diagnostics",))
+            return {
+                "current_model_id": "model-1",
+                "default_model_id": "model-1",
+                "fallback_model_id": None,
+                "models": [diagnostic],
+            }
+
+        async def test_model(self, model_id):
+            calls.append(("test", model_id))
+            return {
+                **diagnostic,
+                "latency_ms": 12,
+                "sample": "ok",
+                "message": "model responded",
+            }
+
+    admin_api_client.app.dependency_overrides[
+        models_router.get_model_service
+    ] = lambda: FakeModelService()
+    headers = auth_header(auth_tokens.admin)
+
+    diagnostics = admin_api_client.get("/admin/models/diagnostics", headers=headers)
+    test_response = admin_api_client.post("/admin/models/model-1/test", headers=headers)
+
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["current_model_id"] == "model-1"
+    assert diagnostics.json()["models"][0]["reason_code"] == "ok"
+    assert test_response.status_code == 200
+    assert test_response.json()["latency_ms"] == 12
+    assert test_response.json()["sample"] == "ok"
+    assert calls == [("diagnostics",), ("test", "model-1")]
+
+
 def test_admin_prompt_routes_cover_update_reset_history_rollback_and_preview(
     admin_api_client,
     auth_tokens,

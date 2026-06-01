@@ -12,6 +12,7 @@ from agentclaw.api.schemas.dashboard import (
     TemplateLibraryAppsResponse,
     TemplateLibraryImportRequest,
     TemplateLibraryImportResponse,
+    TemplateLibraryRepairResponse,
     TracesSummary,
     TrendData,
 )
@@ -103,3 +104,36 @@ async def import_template_library_app(
             status_code=500,
         )
     return TemplateLibraryImportResponse(**result)
+
+
+@router.post(
+    "/template-library/apps/{app_id}/repair",
+    response_model=TemplateLibraryRepairResponse,
+    summary="Repair an imported Template Library app registration",
+)
+async def repair_template_library_app(
+    app_id: str,
+    service: DashboardService = Depends(get_dashboard_service),
+):
+    """Ensure a packaged template is copied, imported in agents/__init__.py, and hot-registered."""
+    try:
+        result = await service.repair_template_library_app(app_id)
+    except FileNotFoundError as exc:
+        raise APIError(
+            error=str(exc),
+            code=ErrorCode.NOT_FOUND,
+            status_code=404,
+        )
+    except (PermissionError, ValueError) as exc:
+        raise APIError(
+            error=str(exc),
+            code=ErrorCode.INVALID_REQUEST,
+            status_code=400,
+        )
+    except Exception as exc:
+        raise APIError(
+            error=f"修复模板失败: {exc}",
+            code=ErrorCode.OPERATION_FAILED,
+            status_code=500,
+        )
+    return TemplateLibraryRepairResponse(**result)

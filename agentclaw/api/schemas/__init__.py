@@ -53,6 +53,8 @@ from agentclaw.api.schemas.model import (
     ModelListResponse,
     ModelUpdateRequest,
     ModelFallbackRequest,
+    ModelDiagnostic,
+    ModelDiagnosticsResponse,
 )
 from agentclaw.api.schemas.audio import (
     SpeechToTextResponse,
@@ -137,6 +139,8 @@ __all__ = [
     "ModelListResponse",
     "ModelUpdateRequest",
     "ModelFallbackRequest",
+    "ModelDiagnostic",
+    "ModelDiagnosticsResponse",
     # Audio
     "SpeechToTextResponse",
     "TextToSpeechRequest",

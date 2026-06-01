@@ -2,9 +2,17 @@
   <div>
     <PageHeader :title="t('channels.title')">
       <template #actions>
-        <n-button v-if="currentTab === 'config'" type="primary" @click="openCreate" size="small">+ {{ t('channels.create') }}</n-button>
+        <n-button v-if="currentTab === 'config' && serviceStatusReady && !serviceUnavailable" type="primary" @click="openCreate" size="small">+ {{ t('channels.create') }}</n-button>
       </template>
     </PageHeader>
+
+    <FeatureUnavailable
+      v-if="serviceUnavailable"
+      title="渠道配置服务未启用"
+      description="当前本地运行环境没有初始化渠道配置后端，所以这个入口已从侧边栏隐藏，避免点开后只看到请求失败。"
+      :reason="serviceUnavailableReason"
+    />
+    <template v-else-if="serviceStatusReady">
 
     <n-tabs :value="currentTab" type="line" animated style="margin-bottom: 16px;" @update:value="handleTabChange">
       <n-tab-pane name="config" :tab="t('channels.config')">
@@ -93,6 +101,7 @@
         </n-space>
       </template>
     </n-modal>
+    </template>
   </div>
 </template>
 
@@ -107,9 +116,11 @@ import {
   NTabs, NTabPane,
 } from 'naive-ui'
 import PageHeader from '../components/PageHeader.vue'
+import FeatureUnavailable from '../components/FeatureUnavailable.vue'
 import ChannelLogs from './ChannelLogs.vue'
 import { channelsApi, workflowsApi } from '../api'
 import { useModalForm } from '../composables/useModalForm'
+import { useServiceAvailability } from '../composables/useServiceAvailability'
 
 const route = useRoute()
 const router = useRouter()
@@ -125,6 +136,17 @@ const saving = ref(false)
 const probing = ref(false)
 const probeResult = ref(null)
 const logRefreshKey = ref(0)
+const serviceAvailability = useServiceAvailability({ autoLoad: false })
+const serviceStatusReady = computed(() => Boolean(serviceAvailability.health.value || serviceAvailability.error.value))
+const serviceUnavailable = computed(() => {
+  if (serviceAvailability.error.value && !serviceAvailability.health.value) return true
+  if (!serviceAvailability.health.value) return false
+  return !serviceAvailability.isAvailable('channels', { fallback: false })
+})
+const serviceUnavailableReason = computed(() => (
+  serviceAvailability.reason('channels') ||
+  (serviceAvailability.error.value ? '无法读取 /admin/health 状态，已暂停此入口以避免无效请求。' : '')
+))
 
 const TYPE_LABELS = computed(() => ({
   feishu: t('channels.feishu'),
@@ -336,6 +358,7 @@ const columns = computed(() => [
 
 // --- 数据获取 ---
 async function fetchChannels() {
+  if (!serviceStatusReady.value || serviceUnavailable.value) return
   loading.value = true
   try {
     const [chRes, wfRes] = await Promise.all([channelsApi.list(), workflowsApi.list()])
@@ -408,7 +431,11 @@ async function probeCredentials() {
   }
 }
 
-onMounted(fetchChannels)
+onMounted(async () => {
+  await serviceAvailability.refresh()
+  if (serviceUnavailable.value) return
+  await fetchChannels()
+})
 </script>
 
 <style scoped>

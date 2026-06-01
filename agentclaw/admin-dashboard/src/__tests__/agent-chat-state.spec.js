@@ -1551,6 +1551,36 @@ describe('AgentChat conversation runtime state', () => {
     expect(ctx.processCollapsed).toBe(true)
   })
 
+  it('keeps command tool calls visible when process details are hidden', () => {
+    const shellTool = {
+      id: 'call-shell',
+      name: 'shell',
+      arguments: JSON.stringify({ command: 'pwd' }),
+      result: 'D:\\codex\\ui\\agentclaw',
+      status: 'completed',
+    }
+    const readTool = {
+      id: 'call-read',
+      name: 'read_file',
+      arguments: JSON.stringify({ path: 'README.md' }),
+      result: 'content',
+      status: 'completed',
+    }
+
+    const stripped = AgentChat.methods.stripProcessDetails.call({}, {
+      role: 'assistant',
+      content: 'done',
+      reasoning: 'internal reasoning',
+      nodeSteps: [
+        { id: 'agent', toolCalls: [shellTool, readTool], segments: [{ type: 'tool', ...shellTool }] },
+      ],
+    })
+
+    expect(stripped.nodeSteps).toBeUndefined()
+    expect(stripped.reasoning).toBeUndefined()
+    expect(stripped.toolCalls).toEqual([shellTool])
+  })
+
 
   it('marks a node as failed when model call fails', () => {
     const ctx = {
@@ -1561,6 +1591,36 @@ describe('AgentChat conversation runtime state', () => {
 
     expect(ctx.nodeSteps[0].status).toBe('failed')
     expect(ctx.nodeSteps[0].error).toBe('model timeout')
+  })
+
+  it('turns raw workflow failures into actionable user-facing reasons', () => {
+    const ctx = {
+      $t: (key, params = {}) => {
+        const labels = {
+          'agentChat.requestFailed': `请求失败：${params.message}`,
+          'agentChat.unknownError': '未知错误',
+          'agentChat.failureReasons.modelName': `模型名不对：${params.detail}`,
+          'agentChat.failureReasons.commandFailed': `命令失败：${params.detail}`,
+          'agentChat.failureReasons.permission': `权限不足：${params.detail}`,
+        }
+        return labels[key] || `${key}:${params.detail || ''}`
+      },
+    }
+    ctx.extractRequestErrorPayload = AgentChat.methods.extractRequestErrorPayload.bind(ctx)
+    ctx.getActionableFailureMessage = AgentChat.methods.getActionableFailureMessage.bind(ctx)
+
+    expect(AgentChat.methods.getRequestFailedMessage.call(
+      ctx,
+      new Error('HTTP 500: {"message":"model_not_found: gpt-x"}'),
+    )).toContain('模型名不对')
+    expect(AgentChat.methods.getRequestFailedMessage.call(
+      ctx,
+      new Error('HTTP 500: {"message":"Shell command failed (exit code 1)"}'),
+    )).toContain('命令失败')
+    expect(AgentChat.methods.getRequestFailedMessage.call(
+      ctx,
+      new Error('HTTP 401: {"error":"invalid token"}'),
+    )).toContain('权限不足')
   })
 
   it('keeps the next pending confirmation visible after resolving the previous one', async () => {

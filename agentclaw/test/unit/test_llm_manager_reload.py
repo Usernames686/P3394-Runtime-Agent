@@ -83,3 +83,26 @@ def test_llm_manager_treats_legacy_vision_type_as_chat_with_vision_support(tmp_p
     assert manager.get_model("legacy_vision").model_type == "chat"
     assert manager.get_model("legacy_vision").supports_vision is True
     assert manager.get_vision_model_id() == "legacy_vision"
+
+
+def test_llm_manager_falls_back_to_first_model_when_default_aliases_are_empty(tmp_path):
+    models_path = tmp_path / "models.json"
+    models_path.write_text(
+        json.dumps(
+            {
+                "default": "",
+                "fast": "",
+                "models": [
+                    {"id": "model_1", "model": "gpt-5.5"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = LLMManager(config_path=str(models_path))
+
+    assert manager.get_model().id == "model_1"
+    client, config = manager._get_current_client("fast")
+    assert config.id == "model_1"
+    assert client is manager._clients["model_1"]

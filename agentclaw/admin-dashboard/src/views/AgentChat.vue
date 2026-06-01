@@ -1,8 +1,8 @@
 <template>
-  <div class="agent-chat" :class="{ 'public-chat': isPublicMode }">
-    <ChatSidebar :conversations="conversations" :activeId="conversationId" v-model:collapsed="sidebarCollapsed" @new-conversation="newConversation" @select="loadConversation" @delete="deleteConversation" />
+  <div class="agent-chat" :class="{ 'public-chat': isPublicMode, 'compact-chat': compact }">
+    <ChatSidebar v-if="!compact" :conversations="conversations" :activeId="conversationId" v-model:collapsed="sidebarCollapsed" @new-conversation="newConversation" @select="loadConversation" @delete="deleteConversation" />
     <div class="chat-main">
-      <div v-if="!isPublicMode" class="top-bar">
+      <div v-if="!isPublicMode && !hideTopBar" class="top-bar">
         <div class="top-bar-title">{{ workflowName || 'AgentClaw' }}</div>
         <div
           v-if="conversationModels.length"
@@ -95,9 +95,9 @@
           <p>{{ workflowLoadError }}</p>
         </div>
         <div v-else-if="messages.length === 0 && !isStreaming" class="welcome-area">
-          <div class="welcome-icon-large">AC</div>
-          <h3>{{ workflowName || 'AgentClaw' }}</h3>
-          <p>{{ workflowDesc || $t('agentChat.welcomeFallback') }}</p>
+          <div class="welcome-icon-large">{{ assistantInitials }}</div>
+          <h3>{{ resolvedWelcomeTitle }}</h3>
+          <p>{{ resolvedWelcomeDescription }}</p>
           <div v-if="canStartWorkflow && !hasFormFields" class="standalone-start-wrapper">
             <button class="btn-start standalone" @click="startWorkflow">{{ $t('agentChat.startWorkflow') }}</button>
           </div>
@@ -121,13 +121,13 @@
             <span>{{ processCollapsed ? $t('agentChat.expandProcess') : $t('agentChat.collapseProcess') }}</span>
           </button>
         </div>
-        <ChatMessage v-for="(msg, index) in visibleMessages" :key="msg._origIndex != null ? msg._origIndex : index" :msg="msg" :process-collapsed="processCollapsed" :tts-available="ttsAvailable" :tts-state="ttsStateForMessage(msg)" @copy="copyMessage(msg, msg._origIndex != null ? msg._origIndex : index)" @edit="(newText) => editMessage(msg, msg._origIndex != null ? msg._origIndex : index, newText)" @feedback="(type) => feedbackMessage(msg, msg._origIndex != null ? msg._origIndex : index, type)" @toggle-reasoning="toggleReasoning(msg._origIndex != null ? msg._origIndex : index)" @approve="(action) => handleApproval(msg, msg._origIndex != null ? msg._origIndex : index, action)" @toggle-process-view="processCollapsed = !processCollapsed" @speak="speakMessage(msg)" />
-        <StreamingMessage v-if="isStreaming || isCompressingContext" :streamingContent="streamingContent" :reasoningContent="reasoningContent" :thinkingStatus="thinkingStatus" :nodeSteps="nodeSteps" :todoItems="todoItems" :process-collapsed="processCollapsed" @toggle-process-view="processCollapsed = !processCollapsed" />
+        <ChatMessage v-for="(msg, index) in visibleMessages" :key="msg._origIndex != null ? msg._origIndex : index" :msg="msg" :process-collapsed="hideProcessDetails ? false : processCollapsed" :tts-available="ttsAvailable" :tts-state="ttsStateForMessage(msg)" :assistant-name="assistantName" :assistant-initials="assistantInitials" @copy="copyMessage(msg, msg._origIndex != null ? msg._origIndex : index)" @edit="(newText) => editMessage(msg, msg._origIndex != null ? msg._origIndex : index, newText)" @feedback="(type) => feedbackMessage(msg, msg._origIndex != null ? msg._origIndex : index, type)" @toggle-reasoning="toggleReasoning(msg._origIndex != null ? msg._origIndex : index)" @approve="(action) => handleApproval(msg, msg._origIndex != null ? msg._origIndex : index, action)" @toggle-process-view="processCollapsed = !processCollapsed" @speak="speakMessage(msg)" />
+        <StreamingMessage v-if="isStreaming || isCompressingContext" :streamingContent="streamingContent" :reasoningContent="hideProcessDetails ? '' : reasoningContent" :thinkingStatus="thinkingStatus" :nodeSteps="hideProcessDetails ? [] : nodeSteps" :todoItems="todoItems" :process-collapsed="processCollapsed" :assistant-name="assistantName" :assistant-initials="assistantInitials" @toggle-process-view="processCollapsed = !processCollapsed" />
       </div>
-      <ChatInput ref="chatInput" v-model="inputText" :placeholder="inputPlaceholder" :enabled="inputEnabled" :isStreaming="isStreaming" :contextDisplay="contextDisplay" :contextUsed="totalContextTokens" :contextLimit="effectiveContextLimit" :canCompressContext="canManualCompressContext" :uploadAvailable="uploadAvailable" :speechInputAvailable="speechInputAvailable" :recording="speechRecording" :attachedFiles="attachedFiles" :inputError="inputError" :inputModes="humanInputModes" @send="sendMessage" @action="submitHumanInputAction" @attach="$refs.fileInput && $refs.fileInput.click()" @speech-input="toggleSpeechInput" @clear="clearCurrentConversation" @remove-file="removeFile" @drop-files="handleDropFiles" @compress-context="manualCompressContext" />
+      <ChatInput ref="chatInput" v-model="inputText" :placeholder="inputPlaceholder" :enabled="inputEnabled" :isStreaming="isStreaming" :contextDisplay="contextDisplay" :contextUsed="totalContextTokens" :contextLimit="effectiveContextLimit" :canCompressContext="canManualCompressContext" :uploadAvailable="uploadAvailable" :speechInputAvailable="speechInputAvailable" :recording="speechRecording" :attachedFiles="attachedFiles" :inputError="inputError" :inputModes="humanInputModes" :show-clear-button="showClearButton" :show-context-meter="showContextMeter" :confirm-actions="confirmInputActions" @send="sendMessage" @action="submitHumanInputAction" @attach="$refs.fileInput && $refs.fileInput.click()" @speech-input="toggleSpeechInput" @clear="clearCurrentConversation" @remove-file="removeFile" @drop-files="handleDropFiles" @compress-context="manualCompressContext" />
       <input ref="fileInput" type="file" multiple style="display:none" @change="handleFileSelect" />
     </div>
-    <div v-if="!isPublicMode" class="info-panel" :class="{ collapsed: infoPanelCollapsed }" :style="infoPanelCollapsed ? {} : { width: infoPanelWidth + 'px' }">
+    <div v-if="!isPublicMode && !compact" class="info-panel" :class="{ collapsed: infoPanelCollapsed }" :style="infoPanelCollapsed ? {} : { width: infoPanelWidth + 'px' }">
       <button class="info-panel-toggle" @click="infoPanelCollapsed = !infoPanelCollapsed" :title="infoPanelCollapsed ? $t('agentChat.expandPanel') : $t('agentChat.collapsePanel')">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <path :d="infoPanelCollapsed ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'" />
@@ -325,6 +325,7 @@ function ensureLocalConversation(vm, conversationId, messages = []) {
 
 function withWorkflowWelcome(vm, messages = []) {
   const normalized = Array.isArray(messages) ? messages : []
+  if (vm?.compact) return normalized
   if (normalized.length > 0 || !vm?.workflowWelcome) return normalized
   return [{ role: 'welcome', content: vm.workflowWelcome }]
 }
@@ -351,6 +352,86 @@ function generateLocalConversationId() {
     Math.random().toString(36).slice(2),
   ].join('')
   return `conv_${suffix.padEnd(24, '0').slice(0, 24)}`
+}
+
+const COMPACT_COMMAND_TOOL_NAMES = new Set([
+  'shell',
+  'powershell',
+  'execute_command',
+  'execute_sudo_command',
+  'terminal',
+  'command',
+])
+
+function parseToolArguments(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  const text = String(value).trim()
+  if (!text.startsWith('{')) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return {}
+  }
+}
+
+function isCompactCommandTool(tool) {
+  if (!tool) return false
+  const name = String(tool.name || '').toLowerCase()
+  const args = parseToolArguments(tool.arguments)
+  return COMPACT_COMMAND_TOOL_NAMES.has(name)
+    || name.includes('shell')
+    || name.includes('powershell')
+    || name.includes('terminal')
+    || name.includes('command')
+    || typeof args.command === 'string'
+}
+
+function extractCompactCommandToolCalls(msg) {
+  const tools = []
+  const seen = new Set()
+  const addTool = (tool) => {
+    if (!isCompactCommandTool(tool)) return
+    const key = tool?.id || `${tool?.name || 'tool'}:${JSON.stringify(tool?.arguments || '')}:${tools.length}`
+    if (seen.has(key)) return
+    seen.add(key)
+    tools.push(tool)
+  }
+
+  ;(msg?.toolCalls || []).forEach(addTool)
+  ;(msg?.nodeSteps || []).forEach((step) => {
+    ;(step?.toolCalls || []).forEach(addTool)
+    ;(step?.segments || []).forEach((segment) => {
+      if (segment?.type === 'tool') addTool(segment)
+    })
+  })
+
+  return tools
+}
+
+async function submitConfirmRequestFor(vm, current, approved, password) {
+  const headers = getAdminAuthHeaders({ 'Content-Type': 'application/json' })
+  if (!headers) { vm.setTimedInputError?.(vm.$t('auth.invalidToken')); return }
+  if (vm.confirmDialog?.confirmId === current.confirmId) {
+    vm.confirmDialog = { ...vm.confirmDialog, submitting: true }
+  }
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  try {
+    const body = { approved, request_id: current.confirmId }
+    if (current.requireSudo && password) body.sudo_password = password
+    const res = await fetch(`${baseUrl}/api/confirm/${current.confirmId}`, { method: 'POST', headers, body: JSON.stringify(body) })
+    if (handleAdminFetchAuthError(res)) throw new Error(vm.$t('auth.invalidToken'))
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || data.success === false) throw new Error(data.error || data.message || `HTTP ${res.status}`)
+    vm.thinkingStatus = approved ? { icon: '', text: vm.$t('agentChat.confirmed') } : { icon: '', text: vm.$t('agentChat.denied') }
+    vm.showNextConfirmDialog?.()
+  } catch (error) {
+    console.error('确认失败:', error)
+    vm.thinkingStatus = { icon: '', text: vm.$t('agentChat.confirmFailed') }
+    if (vm.confirmDialog?.confirmId === current.confirmId) {
+      vm.confirmDialog = { ...vm.confirmDialog, submitting: false }
+    }
+  }
 }
 
 const RUN_SNAPSHOT_FIELDS = [
@@ -408,6 +489,19 @@ export default {
     publicMode: { type: Boolean, default: false },
     workflowId: { type: String, default: '' },
     shareToken: { type: String, default: ''},
+    compact: { type: Boolean, default: false },
+    hideConfigPanel: { type: Boolean, default: false },
+    hideProcessDetails: { type: Boolean, default: false },
+    hideTopBar: { type: Boolean, default: false },
+    autoApproveToolConfirmations: { type: Boolean, default: false },
+    showClearButton: { type: Boolean, default: true },
+    showContextMeter: { type: Boolean, default: true },
+    confirmInputActions: { type: Boolean, default: true },
+    assistantName: { type: String, default: 'AgentClaw' },
+    assistantInitials: { type: String, default: 'AC' },
+    welcomeTitle: { type: String, default: '' },
+    welcomeDescription: { type: String, default: '' },
+    inputPlaceholderOverride: { type: String, default: '' },
   },
   data() {
     return {
@@ -511,6 +605,7 @@ export default {
       return null
     },
     formFields() {
+      if (this.hideConfigPanel) return []
       if (!this.formConfig) return []
       let fields = this.formConfig
       if (this.userInputFieldName) {
@@ -566,6 +661,7 @@ export default {
       return ''
     },
     inputPlaceholder() {
+      if (this.inputPlaceholderOverride) return this.inputPlaceholderOverride
       if (this.workflowLoadError) return this.$t('agentChat.workflowUnavailable')
       if (this.isInitializing) return this.$t('common.loading')
       if (!this.userInputFieldName) {
@@ -579,6 +675,12 @@ export default {
       if (this.workflowStatus === 'finished') return this.$t('agentChat.startNewRound')
       const field = this.userInputField
       return field?.label || this.$t('agentChat.enterQuestion')
+    },
+    resolvedWelcomeTitle() {
+      return this.welcomeTitle || this.workflowName || this.assistantName || 'AgentClaw'
+    },
+    resolvedWelcomeDescription() {
+      return this.welcomeDescription || this.workflowDesc || this.$t('agentChat.welcomeFallback')
     },
     hasFormConfig() { return this.formConfig && this.formConfig.length > 0 },
     convApi() { return this.isPublicMode ? publicConversationsApi : conversationsApi },
@@ -661,8 +763,10 @@ export default {
     visibleMessages() {
       const messages = this.getRenderableMessages()
       const n = this.dynamicVisibleCount
-      if (this.showAllMessages || messages.length <= n) return messages
-      return messages.slice(-n).map((msg, i) => ({ ...msg, _origIndex: messages.length - n + i }))
+      const visible = this.showAllMessages || messages.length <= n
+        ? messages
+        : messages.slice(-n).map((msg, i) => ({ ...msg, _origIndex: messages.length - n + i }))
+      return this.hideProcessDetails ? visible.map(this.stripProcessDetails) : visible
     },
     hiddenCount() {
       return this.getRenderableMessages().length - this.dynamicVisibleCount
@@ -671,6 +775,7 @@ export default {
       return !this.showAllMessages && this.hiddenCount > 0
     },
     hasProcessMessages() {
+      if (this.hideProcessDetails) return false
       if (this.nodeSteps.length > 0 || this.reasoningContent) return true
       return this.messages.some(msg => {
         if (msg.role !== 'assistant') return false
@@ -711,6 +816,8 @@ export default {
       } else if (convId && this.isPublicMode) {
         await this.newConversation()
       } else if (seedInput) {
+        await this.newConversation()
+      } else if (this.compact) {
         await this.newConversation()
       } else if (this.conversations.length > 0) await this.loadConversation(this.conversations[0].id)
       else await this.newConversation()
@@ -884,8 +991,63 @@ export default {
     },
     getRequestFailedMessage(error) {
       return this.$t('agentChat.requestFailed', {
-        message: error?.message || this.$t('agentChat.unknownError'),
+        message: this.getActionableFailureMessage(error),
       })
+    },
+    extractRequestErrorPayload(error) {
+      const rawMessage = String(error?.message || '')
+      const httpMatch = rawMessage.match(/^HTTP\s+(\d+):\s*([\s\S]*)$/i)
+      const status = httpMatch ? Number(httpMatch[1]) : null
+      const bodyText = httpMatch ? httpMatch[2].trim() : rawMessage
+      let parsed = null
+      if (bodyText.startsWith('{') || bodyText.startsWith('[')) {
+        try {
+          parsed = JSON.parse(bodyText)
+        } catch {
+          parsed = null
+        }
+      }
+      const detail = parsed?.message || parsed?.error || parsed?.detail || bodyText || rawMessage
+      return {
+        status,
+        detail: String(detail || ''),
+        raw: [rawMessage, bodyText, JSON.stringify(parsed || {})].join('\n'),
+      }
+    },
+    getActionableFailureMessage(error) {
+      const payload = this.extractRequestErrorPayload(error)
+      const lower = `${payload.raw}\n${payload.detail}`.toLowerCase()
+      const original = payload.detail || error?.message || this.$t('agentChat.unknownError')
+      const withDetail = key => this.$t(key, { detail: original })
+
+      if (payload.status === 401 || payload.status === 403) {
+        return withDetail('agentChat.failureReasons.permission')
+      }
+      if (lower.includes('missing_api_key') || lower.includes('api key') || lower.includes('no api key') || lower.includes('key not set')) {
+        return withDetail('agentChat.failureReasons.modelKey')
+      }
+      if (lower.includes('authentication_failed') || lower.includes('unauthorized') || lower.includes('invalid api key') || lower.includes('401')) {
+        return withDetail('agentChat.failureReasons.modelAuth')
+      }
+      if (lower.includes('workflow') && lower.includes('not found')) {
+        return withDetail('agentChat.failureReasons.workflowMissing')
+      }
+      if (lower.includes('model_not_found') || lower.includes('model not found') || (lower.includes('model') && (lower.includes('does not exist') || lower.includes('404')))) {
+        return withDetail('agentChat.failureReasons.modelName')
+      }
+      if (lower.includes('timeout') || lower.includes('timed out')) {
+        return withDetail('agentChat.failureReasons.modelTimeout')
+      }
+      if (lower.includes('base_url') || lower.includes('connection refused') || lower.includes('failed to connect') || lower.includes('network') || lower.includes('name resolution')) {
+        return withDetail('agentChat.failureReasons.modelBaseUrl')
+      }
+      if (lower.includes('permission denied') || lower.includes('eacces') || lower.includes('operation not permitted') || lower.includes('sudo')) {
+        return withDetail('agentChat.failureReasons.permission')
+      }
+      if (lower.includes('exit code') || lower.includes('command failed') || lower.includes('shell command failed')) {
+        return withDetail('agentChat.failureReasons.commandFailed')
+      }
+      return original
     },
     getApprovalDefaultText(action) {
       return action === 'approve' ? this.$t('agentChat.approvalApprove') : this.$t('agentChat.approvalReject')
@@ -1074,6 +1236,15 @@ export default {
     toggleTool(tool) { tool.disabled = !tool.disabled; this.saveToolConfig() },
     toggleAllServerTools(group) { const allEnabled = group.tools.every(t => !t.disabled); group.tools.forEach(t => { t.disabled = allEnabled }); this.saveToolConfig() },
     async resetToolConfig() { try { await workflowsApi.resetToolConfig(this.currentWorkflowId); await this.loadToolConfig() } catch (e) { console.error('重置失败:', e) } },
+    applySeedInput(text) {
+      const seed = String(text || '').trim()
+      if (!seed) return
+      this.inputText = this.inputText ? `${this.inputText}\n${seed}` : seed
+      this.$nextTick(() => {
+        this.$refs.chatInput?.focus?.()
+        this.$refs.chatInput?.autoResize?.()
+      })
+    },
     initFormData() {
       if (!this.formConfig) return
       const cacheKey = `form_cache_${this.currentWorkflowId}`
@@ -2064,6 +2235,7 @@ export default {
       this.streamingContent = ''
     },
     ensureProcessVisibleForFirstRun() {
+      if (this.hideProcessDetails) return
       if (!this.processCollapsed) return
       const hasActiveProcess = (this.nodeSteps || []).length > 0 || (this.currentToolCalls || []).length > 0 || !!this.reasoningContent
       if (hasActiveProcess) return
@@ -2090,6 +2262,11 @@ export default {
       return steps.find(s => s.status === 'running') || steps.find(s => (s.toolCalls || []).length) || null
     },
     showConfirmDialog(request) {
+      if (this.autoApproveToolConfirmations) {
+        this.confirmDialog = { ...request, visible: false, submitting: false, sudoPassword: '' }
+        submitConfirmRequestFor(this, request, true)
+        return
+      }
       this.confirmDialog = { ...request, visible: true, submitting: false, sudoPassword: '' }
       this.thinkingStatus = { icon: '⚠️', text: this.$t('agentChat.waitForConfirm', { action: request.action }) }
     },
@@ -2107,6 +2284,10 @@ export default {
         requireSudo: payload.require_sudo || payload.requireSudo || false,
       }
       if (!request.confirmId) return
+      if (this.autoApproveToolConfirmations) {
+        await submitConfirmRequestFor(this, request, true)
+        return
+      }
       if (this.confirmDialog.visible || this.confirmDialog.submitting) {
         this.confirmQueue.push(request)
         return
@@ -2117,24 +2298,10 @@ export default {
       const current = { ...this.confirmDialog }
       if (!current.confirmId || current.submitting) return
       if (approved && current.requireSudo && !password) { this.setTimedInputError(this.$t('agentChat.enterSudoPassword')); return }
-      const headers = getAdminAuthHeaders({ 'Content-Type': 'application/json' })
-      if (!headers) { this.setTimedInputError(this.$t('auth.invalidToken')); return }
-      this.confirmDialog = { ...this.confirmDialog, submitting: true }
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-      try {
-        const body = { approved, request_id: current.confirmId }
-        if (current.requireSudo && password) body.sudo_password = password
-        const res = await fetch(`${baseUrl}/api/confirm/${current.confirmId}`, { method: 'POST', headers, body: JSON.stringify(body) })
-        if (handleAdminFetchAuthError(res)) throw new Error(this.$t('auth.invalidToken'))
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || data.success === false) throw new Error(data.error || data.message || `HTTP ${res.status}`)
-        this.thinkingStatus = approved ? { icon: '✅', text: this.$t('agentChat.confirmed') } : { icon: '🚫', text: this.$t('agentChat.denied') }
-        this.showNextConfirmDialog()
-      } catch (error) {
-        console.error('确认失败:', error)
-        this.thinkingStatus = { icon: '❌', text: this.$t('agentChat.confirmFailed') }
-        this.confirmDialog = { ...this.confirmDialog, submitting: false }
-      }
+      await submitConfirmRequestFor(this, current, approved, password)
+    },
+    async submitConfirmRequest(current, approved, password) {
+      await submitConfirmRequestFor(this, current, approved, password)
     },
     getNodeTypeLabel(type) {
       const key = String(type || '').toLowerCase()
@@ -2204,6 +2371,19 @@ export default {
         }
         return normalizedMsg
       })
+    },
+    stripProcessDetails(msg) {
+      if (!msg || msg.role !== 'assistant') return msg
+      const compactToolCalls = extractCompactCommandToolCalls(msg)
+      const {
+        nodeSteps,
+        toolCalls,
+        reasoning,
+        reasoningExpanded,
+        ...rest
+      } = msg
+      if (compactToolCalls.length) rest.toolCalls = compactToolCalls
+      return rest
     },
     resolveToolCallStatus({ status, result }) {
       const ns = String(status || '').toLowerCase().trim()
@@ -2379,6 +2559,7 @@ export default {
 .mono-font { font-family: var(--font-mono); }
 .agent-chat { display: flex; height: 100vh; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%); margin: -24px; width: calc(100% + 48px); }
 .agent-chat.public-chat { margin: 0; width: 100%; height: 100vh; overflow: hidden; }
+.agent-chat.compact-chat { height: 100%; margin: 0; width: 100%; overflow: hidden; background: #ffffff; }
 
 .chevron-icon {
   flex-shrink: 0;
@@ -2394,8 +2575,10 @@ export default {
 /* Chat Main */
 .chat-main { flex: 1; display: flex; flex-direction: column; background: linear-gradient(180deg, rgba(255,255,255,0.76), rgba(248,250,252,0.94)); position: relative; min-width: 400px; }
 .public-chat .chat-main { min-width: 0; }
+.compact-chat .chat-main { min-width: 0; background: #ffffff; }
 .top-bar { padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-light); z-index: 10; background: rgba(255,255,255,0.85); backdrop-filter: blur(12px); position: relative; }
 .top-bar-title { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+.compact-chat .top-bar { padding: 10px 18px; background: #ffffff; }
 .model-selector { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--bg-app); border: 1px solid var(--border-base); border-radius: var(--radius-full); cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-sec); transition: all 0.2s; }
 .model-selector:hover { border-color: var(--border-dark); color: var(--text-main); box-shadow: var(--shadow-sm); }
 .model-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-main); }
@@ -2410,6 +2593,7 @@ export default {
 
 /* Messages */
 .messages-container { flex: 1; overflow-y: auto; padding: 24px 0 160px; display: flex; flex-direction: column; scroll-behavior: smooth; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.72) rgba(226, 232, 240, 0.55); }
+.compact-chat .messages-container { padding: 20px 0 132px; }
 .messages-container::-webkit-scrollbar { width: 10px; }
 .messages-container::-webkit-scrollbar-track { background: rgba(226, 232, 240, 0.55); border-radius: var(--radius-full); margin: 12px 0 152px; }
 .messages-container::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(100, 116, 139, 0.78), rgba(71, 85, 105, 0.88)); border: 2px solid rgba(248, 250, 252, 0.9); border-radius: var(--radius-full); }

@@ -1,0 +1,23 @@
+{
+  "id": "p3394_runtime_agent",
+  "name": "P3394 Runtime Agent",
+  "description": "A P3394-inspired AgentClaw orchestrator with manifest, UMF input/output normalization, session create/fetch/close, task routing, workflow delegation, audit events, conformance checks, and agentic LLM command execution.",
+  "tags": [
+    "P3394",
+    "Runtime",
+    "Manifest",
+    "UMF",
+    "Session",
+    "Orchestrator",
+    "Delegation",
+    "LLM",
+    "Tools"
+  ],
+  "entry": "agents/p3394_runtime_agent.py",
+  "workflow_id": "p3394_runtime_agent",
+  "recommended_input": "task.route: run tests and explain the result",
+  "category": "standard",
+  "workflow": "agents/p3394_runtime_agent.py",
+  "copyable": true,
+  "inspectable": true
+}

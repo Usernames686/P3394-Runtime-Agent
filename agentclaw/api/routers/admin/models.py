@@ -10,6 +10,8 @@ from agentclaw.api.schemas import (
     ModelUpdateRequest,
     ModelFallbackRequest,
     FallbackState,
+    ModelDiagnostic,
+    ModelDiagnosticsResponse,
 )
 from agentclaw.api.schemas.common import ErrorCode, APIError
 from agentclaw.api.schemas.dashboard import (
@@ -46,6 +48,20 @@ async def list_models(
     )
 
 
+@router.get("/diagnostics", response_model=ModelDiagnosticsResponse, summary="Diagnose models")
+async def diagnose_models(
+    service: ModelService = Depends(get_model_service),
+):
+    """Return non-secret model readiness diagnostics."""
+    result = service.get_model_diagnostics()
+    return ModelDiagnosticsResponse(
+        current_model_id=result.get("current_model_id"),
+        default_model_id=result.get("default_model_id"),
+        fallback_model_id=result.get("fallback_model_id"),
+        models=[ModelDiagnostic(**m) for m in result.get("models", [])],
+    )
+
+
 @router.get("/{model_id}", response_model=ModelInfo, summary="Get model")
 async def get_model(
     model_id: str,
@@ -60,6 +76,16 @@ async def get_model(
             status_code=404,
         )
     return ModelInfo(**model)
+
+
+@router.post("/{model_id}/test", response_model=ModelDiagnostic, summary="Test model")
+async def test_model(
+    model_id: str,
+    service: ModelService = Depends(get_model_service),
+):
+    """Run a tiny model request and return an actionable diagnostic."""
+    result = await service.test_model(model_id)
+    return ModelDiagnostic(**result)
 
 
 @router.put("/{model_id}", response_model=ModelInfo, summary="Update model")

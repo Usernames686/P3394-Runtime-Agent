@@ -87,6 +87,10 @@ api.interceptors.response.use(
 
 export default api
 
+export const adminApi = {
+  health: () => api.get('/health'),
+}
+
 // Dashboard API
 export const dashboardApi = {
   getStats: () => api.get('/dashboard/stats'),
@@ -96,6 +100,31 @@ export const dashboardApi = {
 export const templateLibraryApi = {
   list: () => api.get('/dashboard/template-library/apps'),
   importApp: (id, data = {}) => api.post(`/dashboard/template-library/apps/${id}/import`, data),
+  repairApp: (id) => api.post(`/dashboard/template-library/apps/${id}/repair`),
+}
+
+export const p3394Api = {
+  taskHistory: (params) => api.get('/p3394/task-history', { params }),
+  executionRecords: (params) => api.get('/p3394/execution-records', { params }),
+  executionSummary: (params) => api.get('/p3394/execution-summary', { params }),
+  artifacts: (params) => api.get('/p3394/artifacts', { params }),
+  openPath: (data) => api.post('/p3394/open-path', data),
+  fileContext: (params) => api.get('/p3394/file-context', { params }),
+  toolRecords: (params) => api.get('/p3394/tool-records', { params }),
+  knowledge: (params) => api.get('/p3394/knowledge', { params }),
+  createKnowledge: (data) => api.post('/p3394/knowledge', data),
+  importKnowledge: (data) => api.post('/p3394/knowledge/import', data),
+  importKnowledgeFiles: (formData) => api.post('/p3394/knowledge/import-files', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  memory: (params) => api.get('/p3394/memory', { params }),
+  memoryGraph: (params) => api.get('/p3394/memory-graph', { params }),
+  createMemoryNode: (data) => api.post('/p3394/memory-graph/nodes', data),
+  createMemoryRelation: (data) => api.post('/p3394/memory-graph/relations', data),
+  seedMemoryGraph: (params) => api.post('/p3394/memory-graph/seed-demo', null, { params }),
+  dailyMemory: (params) => api.get('/p3394/daily-memory', { params }),
+  generateDailyMemory: (data, params) => api.post('/p3394/daily-memory/generate', data, { params }),
+  dailyMemoryTimeline: (params) => api.get('/p3394/daily-memory/timeline', { params }),
 }
 
 // Workflows API
@@ -156,6 +185,8 @@ export const tracesApi = {
 export const modelsApi = {
   list: () => api.get('/models'),
   getAvailable: () => api.get('/models/available'),
+  diagnostics: () => api.get('/models/diagnostics'),
+  test: (modelId) => api.post(`/models/${modelId}/test`),
 }
 
 export const audioApi = {

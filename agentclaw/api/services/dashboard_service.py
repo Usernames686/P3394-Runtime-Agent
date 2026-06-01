@@ -230,6 +230,53 @@ class DashboardService:
             "message": "模板已导入为当前项目智能体。",
         }
 
+    async def repair_template_library_app(self, app_id: str) -> dict:
+        """Repair a template's copied files, project import line, and hot registration."""
+        from agentclaw.agent_square import get_claw_app, import_claw_app_to_project, register_project_claw_app_workflow
+        from agentclaw.api.registry import WorkflowRegistry
+        from agentclaw.config import get_config
+
+        app = get_claw_app(app_id)
+        if not app:
+            raise FileNotFoundError(f"template app not found: {app_id}")
+
+        config = get_config()
+        project = config.project
+        workflow_id = str(app.get("workflow_id") or app.get("id") or app_id)
+        already_registered = WorkflowRegistry.get(workflow_id) is not None
+
+        import_result = import_claw_app_to_project(
+            app_id,
+            project.project_dir,
+            overwrite=False,
+        )
+
+        if already_registered:
+            workflow = WorkflowRegistry.get(workflow_id)
+            if workflow is not None:
+                setattr(workflow, "is_builtin", False)
+                setattr(workflow, "agent_square_app_id", "")
+            repaired = False
+            registered = True
+        else:
+            register_project_claw_app_workflow(import_result, project)
+            repaired = True
+            registered = WorkflowRegistry.get(workflow_id) is not None
+
+        return {
+            "success": True,
+            "imported": True,
+            "registered": registered,
+            "repaired": repaired,
+            "app_id": str((import_result.get("app") or {}).get("id") or app_id),
+            "workflow_id": workflow_id,
+            "target_dir": str(import_result["target_dir"]),
+            "workflow_file": str(import_result["workflow_file"]),
+            "init_path": str(import_result.get("init_path") or ""),
+            "import_added": bool(import_result.get("import_added", False)),
+            "message": "模板已修复并加载为当前项目智能体。" if repaired else "模板状态正常。",
+        }
+
 
 def get_dashboard_service() -> DashboardService:
     """获取 Dashboard 服务实例"""

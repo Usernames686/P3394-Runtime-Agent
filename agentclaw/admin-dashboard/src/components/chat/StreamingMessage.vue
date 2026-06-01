@@ -1,10 +1,10 @@
 <template>
   <div class="message-wrapper">
     <div class="message">
-      <div class="message-avatar">AC</div>
+      <div class="message-avatar">{{ assistantInitials }}</div>
       <div class="message-content">
         <div class="message-header">
-          <span class="agent-name">AgentClaw</span>
+          <span class="agent-name">{{ assistantName }}</span>
           <span class="mono-font">{{ currentTime }}</span>
         </div>
 
@@ -56,6 +56,7 @@
                         <span>{{ step.name }}{{ step.elapsed ? ` (${step.elapsed})` : step.status === 'running' ? '...' : '' }}</span>
                         <svg class="expand-chevron" :class="{ rotated: step.expanded }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
                       </div>
+                  <CodexStepList :step="step" />
                   <!-- 节点 IO 面板 -->
                   <div v-if="step.expanded && (step.inputs || step.outputs || step.error)" class="node-io-panel mono-font">
                     <div v-if="step.inputs && Object.keys(step.inputs).length" class="io-section">
@@ -143,6 +144,7 @@
                     <span>{{ step.name }}{{ step.elapsed ? ` (${step.elapsed})` : step.status === 'running' ? '...' : '' }}</span>
                     <svg class="expand-chevron" :class="{ rotated: step.expanded }" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
                   </div>
+                <CodexStepList :step="step" />
                 <!-- 节点 IO 面板 -->
                 <div v-if="step.expanded && (step.inputs || step.outputs || step.error)" class="node-io-panel mono-font">
                   <div v-if="step.inputs && Object.keys(step.inputs).length" class="io-section">
@@ -223,11 +225,12 @@
 import ToolDetailsPanel from './ToolDetailsPanel.vue'
 import TodoCard from './TodoCard.vue'
 import JsonCodeBlock from './JsonCodeBlock.vue'
+import CodexStepList from './CodexStepList.vue'
 import { renderMarkdownSafe } from '../../utils/sanitize'
 
 export default {
   name: 'StreamingMessage',
-  components: { ToolDetailsPanel, TodoCard, JsonCodeBlock },
+  components: { ToolDetailsPanel, TodoCard, JsonCodeBlock, CodexStepList },
   props: {
     streamingContent: { type: String, default: '' },
     reasoningContent: { type: String, default: '' },
@@ -235,6 +238,8 @@ export default {
     nodeSteps: { type: Array, default: () => [] },
     todoItems: { type: Array, default: () => [] },
     processCollapsed: { type: Boolean, default: false },
+    assistantName: { type: String, default: 'AgentClaw' },
+    assistantInitials: { type: String, default: 'AC' },
   },
   emits: ['toggle-process-view'],
   data() {

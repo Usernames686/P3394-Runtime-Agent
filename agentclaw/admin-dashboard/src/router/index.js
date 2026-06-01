@@ -3,12 +3,17 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    redirect: '/builtin',
+    redirect: '/p3394-agent',
   },
   {
     path: '/builtin',
     name: 'BuiltinAgent',
     component: () => import('../views/BuiltinAgent.vue'),
+  },
+  {
+    path: '/p3394-agent',
+    name: 'P3394Agent',
+    component: () => import('../views/P3394Agent.vue'),
   },
   {
     path: '/agents',
@@ -18,6 +23,11 @@ const routes = [
     path: '/templates',
     name: 'TemplateLibrary',
     component: () => import('../views/TemplateLibrary.vue'),
+  },
+  {
+    path: '/memory-graph',
+    name: 'MemoryGraph',
+    component: () => import('../views/MemoryGraph.vue'),
   },
   {
     path: '/dashboard',

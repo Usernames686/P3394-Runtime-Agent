@@ -526,7 +526,14 @@ class LLMManager(BaseComponent):
         if self.default_id in self._models_cache:
             return self._models_cache[self.default_id]
         
-        # 最后回退到环境变量
+        # 回退到首个已配置模型，再回退到环境变量
+        for configured_id in self.model_ids:
+            if configured_id in self._models_cache:
+                return self._models_cache[configured_id]
+
+        if self._models_cache:
+            return next(iter(self._models_cache.values()))
+
         return LLMConfig.from_env()
     
     def get_vision_model_id(self) -> Optional[str]:
@@ -680,9 +687,9 @@ class LLMManager(BaseComponent):
 
         # 解析别名
         if model_id == "fast":
-            model_id = self.fast_id
+            model_id = self.fast_id or None
         elif model_id == "vision":
-            model_id = self.vision_id
+            model_id = self.vision_id or None
 
         target_id = model_id or self._current_model_id or self.default_id
         
@@ -706,8 +713,20 @@ class LLMManager(BaseComponent):
             return self._clients[target_id], config
         
         # 回退到默认
+        if self.default_id in self._clients:
+            default_config = self._models_cache.get(self.default_id, self.get_model(self.default_id))
+            return self._clients[self.default_id], default_config
+
+        for configured_id in self.model_ids:
+            if configured_id in self._clients:
+                return self._clients[configured_id], self._models_cache[configured_id]
+
+        if self._clients:
+            fallback_id = next(iter(self._clients))
+            return self._clients[fallback_id], self._models_cache.get(fallback_id, self.get_model(fallback_id))
+
         default_config = self.get_model()
-        return self._clients.get(self.default_id), default_config
+        return self._clients.get(default_config.id), default_config
     
     def _get_fallback_model_id(self, current_id: str) -> Optional[str]:
         """获取下一个降级模型 ID"""

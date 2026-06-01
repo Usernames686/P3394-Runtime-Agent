@@ -74,6 +74,51 @@ PUBLIC_FILE_INPUT_TYPES = {
 }
 
 
+def _mark_p3394_execution_failed(workflow_id: str, thread_id: str, error: Any) -> None:
+    if workflow_id != "p3394_runtime_agent" or not thread_id:
+        return
+
+    try:
+        from agentclaw.agent_square.p3394_runtime_agent.agents.p3394_execution_records import (
+            complete_p3394_execution_record,
+            get_latest_p3394_execution_record_for_thread,
+        )
+        from agentclaw.agent_square.p3394_runtime_agent.agents.p3394_task_history import (
+            get_latest_p3394_task_history_for_thread,
+            update_p3394_task_history,
+        )
+
+        error_preview = f"执行失败：{error}"[:500]
+        latest_execution = get_latest_p3394_execution_record_for_thread(
+            workflow_id=workflow_id,
+            thread_id=thread_id,
+        )
+        if latest_execution and latest_execution.get("status") not in {"completed", "failed"}:
+            role_statuses = latest_execution.get("role_statuses")
+            complete_p3394_execution_record(
+                record_id=str(latest_execution.get("id")),
+                workflow_id=workflow_id,
+                answer_preview=error_preview,
+                role_statuses=role_statuses if isinstance(role_statuses, list) else [],
+                status="failed",
+            )
+
+        latest_task = get_latest_p3394_task_history_for_thread(
+            workflow_id=workflow_id,
+            thread_id=thread_id,
+        )
+        if latest_task and latest_task.get("status") not in {"completed", "failed"}:
+            role_plan = latest_task.get("role_plan")
+            update_p3394_task_history(
+                history_id=str(latest_task.get("id")),
+                workflow_id=workflow_id,
+                role_plan=role_plan if isinstance(role_plan, list) else None,
+                status="failed",
+            )
+    except Exception as exc:
+        logger.warning(f"Failed to mark P3394 execution as failed: {exc}")
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         value = int(str(os.getenv(name, "")).strip() or default)
@@ -684,6 +729,7 @@ async def _run_workflow_request(
 
         error_detail = traceback.format_exc()
         logger.error(f"Workflow execution failed: {e}\n{error_detail}")
+        _mark_p3394_execution_failed(workflow_id, thread_id, e)
         return JSONResponse(
             status_code=500,
             content=WorkflowRunError(
@@ -1136,6 +1182,7 @@ async def _stream_workflow(workflow, data: dict, context, thread_id: Optional[st
 
                 error_msg = f"{e}\n{traceback.format_exc()}"
                 logger.error(f"Workflow execution failed: {error_msg}")
+                _mark_p3394_execution_failed(workflow.id, thread_id, e)
                 await channel._push_error(str(e))
                 await channel.push_workflow_finished(status="failed", error=str(e))
             finally:

@@ -2,9 +2,17 @@
   <div>
     <PageHeader :title="t('schedulerPage.title')">
       <template #actions>
-        <n-button type="primary" @click="showCreateModal = true" size="small">+ {{ t('schedulerPage.createJob') }}</n-button>
+        <n-button v-if="serviceStatusReady && !serviceUnavailable" type="primary" @click="showCreateModal = true" size="small">+ {{ t('schedulerPage.createJob') }}</n-button>
       </template>
     </PageHeader>
+
+    <FeatureUnavailable
+      v-if="serviceUnavailable"
+      title="定时任务服务未启用"
+      description="当前本地运行环境没有初始化调度器后端，所以这个入口已从侧边栏隐藏，避免点开后只看到请求失败。"
+      :reason="serviceUnavailableReason"
+    />
+    <template v-else-if="serviceStatusReady">
 
     <!-- 统计栏 -->
     <div class="stat-grid" style="margin-bottom: 20px;">
@@ -56,6 +64,7 @@
     <!-- 创建弹窗 -->
     <JobFormModal :visible="showCreateModal" :workflow-ids="workflowIds"
       @close="showCreateModal = false" @created="fetchJobs" />
+    </template>
   </div>
 </template>
 
@@ -69,9 +78,11 @@ import {
   useMessage,
 } from 'naive-ui'
 import PageHeader from '../components/PageHeader.vue'
+import FeatureUnavailable from '../components/FeatureUnavailable.vue'
 import JobFormModal from './scheduler/JobFormModal.vue'
 import { schedulerApi, workflowsApi } from '../api'
 import { formatDateTime } from '../composables/useFormatters'
+import { useServiceAvailability } from '../composables/useServiceAvailability'
 
 const router = useRouter()
 const message = useMessage()
@@ -86,6 +97,17 @@ const searchText = ref('')
 const filterTriggerType = ref(null)
 const workflowIds = ref([])
 const showCreateModal = ref(false)
+const serviceAvailability = useServiceAvailability({ autoLoad: false })
+const serviceStatusReady = computed(() => Boolean(serviceAvailability.health.value || serviceAvailability.error.value))
+const serviceUnavailable = computed(() => {
+  if (serviceAvailability.error.value && !serviceAvailability.health.value) return true
+  if (!serviceAvailability.health.value) return false
+  return !serviceAvailability.isAvailable('scheduler', { fallback: false })
+})
+const serviceUnavailableReason = computed(() => (
+  serviceAvailability.reason('scheduler') ||
+  (serviceAvailability.error.value ? '无法读取 /admin/health 状态，已暂停此入口以避免无效请求。' : '')
+))
 
 const filters = ref({ status: null, workflow_id: null })
 
@@ -267,6 +289,7 @@ function onPageSizeChange(newSize) {
 }
 
 async function fetchJobs() {
+  if (!serviceStatusReady.value || serviceUnavailable.value) return
   loading.value = true
   try {
     const params = { page: page.value, limit: limit.value }
@@ -333,7 +356,9 @@ async function handleDelete(job) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await serviceAvailability.refresh()
+  if (serviceUnavailable.value) return
   fetchJobs()
   fetchWorkflows()
 })

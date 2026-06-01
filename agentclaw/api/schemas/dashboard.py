@@ -108,6 +108,11 @@ class TemplateLibraryImportResponse(BaseModel):
     message: Optional[str] = None
 
 
+class TemplateLibraryRepairResponse(TemplateLibraryImportResponse):
+    """修复模板导入/注册状态响应"""
+    repaired: bool = False
+
+
 class AvailableModel(BaseModel):
     """可用模型（用于节点模型切换）"""
     id: str

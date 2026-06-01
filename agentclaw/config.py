@@ -259,13 +259,19 @@ class ProjectConfig:
         自动发现项目配置文件
 
         查找顺序：
-        1. 入口脚本所在目录（sys.argv[0]）
-        2. 当前工作目录（CWD）
-        3. 指定的 base_dir
+        1. AGENTCLAW_PROJECT_DIR（显式项目根）
+        2. 入口脚本所在目录（sys.argv[0]）
+        3. 当前工作目录（CWD）
+        4. 指定的 base_dir
         """
         import sys
 
         candidates = []
+
+        env_project_dir = os.getenv("AGENTCLAW_PROJECT_DIR", "").strip()
+        if env_project_dir:
+            env_dir = Path(env_project_dir).expanduser().resolve()
+            candidates.append(env_dir)
 
         # 入口脚本目录
         if sys.argv and sys.argv[0]:
@@ -289,9 +295,12 @@ class ProjectConfig:
                 candidates.append(base_dir)
 
         # 查找配置文件
-        project_dir = next((d for d in candidates if _has_project_markers(d)), None)
-        if project_dir is None:
-            project_dir = base_dir if base_dir else (candidates[0] if candidates else cwd)
+        if env_project_dir:
+            project_dir = candidates[0]
+        else:
+            project_dir = next((d for d in candidates if _has_project_markers(d)), None)
+            if project_dir is None:
+                project_dir = base_dir if base_dir else (candidates[0] if candidates else cwd)
         skills_dir = None
         mcp_config = None
         models_config = None
