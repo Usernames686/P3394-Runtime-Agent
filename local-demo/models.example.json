@@ -1,0 +1,20 @@
+{
+  "default": "p3394_default",
+  "fallback": "",
+  "fast": "p3394_default",
+  "vision": "",
+  "speech2text": "",
+  "tts": "",
+  "tts_voice": "",
+  "models": [
+    {
+      "id": "p3394_default",
+      "channel": "openai",
+      "type": "chat",
+      "supports_vision": false,
+      "model": "${P3394_MODEL_NAME}",
+      "base_url": "${P3394_MODEL_BASE_URL}",
+      "api_key": "${P3394_MODEL_API_KEY}"
+    }
+  ]
+}

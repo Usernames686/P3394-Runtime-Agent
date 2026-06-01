@@ -27,7 +27,7 @@ http://127.0.0.1:8000/dashboard/p3394-agent
 Admin Token：
 
 ```text
-ac-admin-bc137b7f19f110bfdc0859ad6c1b0c5a
+admin
 ```
 
 如果服务没启动，在项目根目录运行：

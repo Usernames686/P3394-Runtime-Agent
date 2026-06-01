@@ -153,6 +153,19 @@ def _resolve_env_reference(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _resolve_optional_env_reference(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = _strip_secret_quotes(str(value))
+    if not value:
+        return None
+    if value.startswith("${") and value.endswith("}"):
+        return _strip_secret_quotes(os.getenv(value[2:-1], ""))
+    if value.startswith("$") and len(value) > 1:
+        return _strip_secret_quotes(os.getenv(value[1:], ""))
+    return value
+
+
 class _MissingChatCompletions:
     def __init__(self, message: str):
         self._message = message
@@ -229,7 +242,8 @@ class LLMConfig:
         channel = data.get("channel", "openai")
         # 根据 channel 推导 provider
         # 当设置了 base_url（代理模式）时统一使用 openai provider
-        has_base_url = bool(data.get("base_url"))
+        base_url = _resolve_optional_env_reference(data.get("base_url"))
+        has_base_url = bool(base_url)
         if has_base_url:
             provider = "openai"
         else:
@@ -266,9 +280,9 @@ class LLMConfig:
             id=data.get("id", "default"),
             channel=channel,
             provider=provider,
-            model=data.get("model", "gpt-4"),
+            model=_resolve_optional_env_reference(data.get("model")) or "gpt-4",
             api_key=api_key,
-            base_url=data.get("base_url"),
+            base_url=base_url,
             model_type=model_type,
             supports_vision=supports_vision,
             temperature=data.get("temperature", 0.1),

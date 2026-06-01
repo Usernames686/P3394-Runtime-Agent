@@ -81,7 +81,7 @@ ENV_SECTIONS: tuple[EnvSection, ...] = (
             "服务鉴权配置。agentclaw init/up 会自动生成并写入稳定值。",
         ),
         variables=(
-            EnvVarSpec("ADMIN_TOKEN", "your-admin-token", "管理后台认证 Token。"),
+            EnvVarSpec("ADMIN_TOKEN", "admin", "管理后台认证 Token。"),
             EnvVarSpec("WORKFLOW_API_KEY", "sk-your-workflow-key", "默认工作流执行 API 的 Bearer Key；不具备 Admin 权限，工作流可单独配置 workflow_api_key。"),
             EnvVarSpec("MCP_TOKEN", "your-mcp-token", "聚合 MCP SSE/HTTP 入口的鉴权令牌。"),
             EnvVarSpec("AGENTCLAW_TRUST_PROXY_HEADERS", "false", "仅在可信反向代理会清理 X-Forwarded-* 头时开启；用于 Public Agent 同源校验和限流客户端识别。"),

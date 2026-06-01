@@ -1,10 +1,22 @@
-# P3394 Agent Platform
+# P3394 Runtime Agent
 
-这是你的 P3394 通用智能体平台。本项目基于 AgentClaw 二次包装，默认入口是 P3394 Runtime Agent。
+这是你的 P3394 通用智能体平台，基于 AgentClaw 二次包装，默认入口是 P3394 Runtime Agent。
 
-核心使用方式见 [README.md](./README.md)。
+打开地址：
 
-更多说明：
+```text
+http://127.0.0.1:8000/dashboard/p3394-agent
+```
 
-- [P3394 Agent Platform](./docs/P3394-Agent-Platform.md)
-- [P3394 Runtime Agent](./docs/P3394-Runtime-Agent.md)
+默认 Admin Token：
+
+```text
+admin
+```
+
+支持两种部署方式：
+
+- Docker Compose：复制 `.env.example` 为 `.env`，填写模型配置，然后运行 `docker compose up -d --build`。
+- 本机直接部署：Windows 运行 `.\start-p3394.cmd`，或用 Python 虚拟环境运行 `agentclaw.cli serve -d local-demo`。
+
+详细部署、模型配置、端口说明和常见问题请看 [README.md](./README.md)。

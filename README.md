@@ -1,100 +1,333 @@
-# P3394 Agent Platform
-本项目基于 [`Negai-ai/AgentClaw`](https://github.com/Negai-ai/AgentClaw) 二次开发
-P3394 Agent Platform 是一个本地通用智能体平台。它基于 AgentClaw 二次开发，把 P3394 Runtime Agent 作为默认主智能体，保留 AgentClaw 的工作流、模型调用、工具执行、模板库、管理 API 和原生聊天界面。
+# P3394 Runtime Agent
 
-当前目标不是从 0 重写一个 Agent 框架，而是在已经跑通的 AgentClaw 底座上，二次开发的 P3394 智能体项目。
+本项目基于 [`Negai-ai/AgentClaw`](https://github.com/Negai-ai/AgentClaw) 二次开发。
 
-## 快速打开
+P3394 Runtime Agent is a local general-purpose agent platform packaged on top of AgentClaw. It keeps AgentClaw's workflow runtime, tool execution, model configuration, knowledge base, scheduler, tracing, Admin API, and dashboard, while making the P3394 Runtime Agent the default main entry.
 
-在仓库根目录运行：
+This project supports two deployment modes:
 
-```powershell
-.\start-p3394.cmd
-```
+- Docker Compose: one command starts the app, PostgreSQL, Redis, Milvus, MinIO, and Adminer.
+- Direct local deployment: run the Python service directly for Windows/local development.
 
-打开：
+## What You Get
+
+- P3394 Runtime Agent as the default agent.
+- AgentClaw dashboard and original workflow runtime.
+- Local file, command, tool, and artifact execution paths.
+- Local knowledge base and memory graph pages.
+- Model configuration through `models.json` or dashboard settings.
+- Docker Compose deployment and direct Python deployment.
+
+## Quick Access
+
+After startup, open:
 
 ```text
 http://127.0.0.1:8000/dashboard/p3394-agent
 ```
 
-Admin Token：
+Default Admin Token:
 
 ```text
-ac-admin-bc137b7f19f110bfdc0859ad6c1b0c5a
+admin
 ```
 
-## 现在有什么
+For any public or shared deployment, change `ADMIN_TOKEN` in `.env`.
 
-- `P3394 主智能体`：默认入口，像 AgentClaw 原版聊天页一样使用。
-- `底座助手`：保留 AgentClaw 原版内置 Agent，方便对照和兜底。
-- `模板库`：继续导入其他 Agent 模板。
-- `P3394 Runtime`：内置 P3394 路由、角色轨迹、任务历史、工具记录、文件上下文。
-- `本地命令执行`：通过 AgentClaw 工具和 agentic runtime 执行命令、读写文件、分析代码。
-- `模型接入`：通过 `local-demo/models.json` 配置模型。
+## Deployment Option 1: Docker Compose
 
-## 项目结构
+### Requirements
+
+- Docker Desktop or Docker Engine with Compose v2.
+- At least 4 GB available memory is recommended because Milvus and MinIO are included.
+
+### 1. Create Environment Config
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and fill in your model provider:
+
+```env
+ADMIN_TOKEN=admin
+P3394_MODEL_NAME=gpt-4o-mini
+P3394_MODEL_BASE_URL=https://api.openai.com/v1
+P3394_MODEL_API_KEY=your-model-api-key
+```
+
+If your provider does not require a custom base URL, leave `P3394_MODEL_BASE_URL` empty.
+
+### 2. Start
+
+```bash
+docker compose up -d --build
+```
+
+View logs:
+
+```bash
+docker compose logs -f app
+```
+
+Open:
 
 ```text
-.
-|-- agentclaw/                         # AgentClaw 底座框架和管理前端
-|   |-- admin-dashboard/               # P3394 包装后的前端
-|   |-- agent_square/p3394_runtime_agent/
-|-- local-demo/                        # 本地运行工作区
-|   |-- agents/p3394_runtime_agent/    # 默认主智能体
-|   |-- models.json                    # 模型配置
-|   |-- .env                           # 端口、Token、运行配置
-|-- docs/
-|   |-- P3394-Agent-Platform.md        # 项目包装说明
-|   |-- P3394-Runtime-Agent.md         # P3394 Runtime 详细说明
-|-- scripts/start-p3394.ps1            # Windows 启动脚本
-|-- start-p3394.cmd                    # 一键启动入口
+http://127.0.0.1:8000/dashboard/p3394-agent
 ```
 
-## 常用命令
+### 3. Stop, Restart, Upgrade
 
-启动本地平台：
+Stop:
+
+```bash
+docker compose down
+```
+
+Restart:
+
+```bash
+docker compose restart app
+```
+
+Upgrade after pulling new code:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Remove all Docker data volumes:
+
+```bash
+docker compose down -v
+```
+
+This deletes PostgreSQL, Redis, Milvus, MinIO, and app runtime data.
+
+### Docker Services
+
+| Service | Default URL / Port | Purpose |
+| --- | --- | --- |
+| P3394 App | `http://127.0.0.1:8000` | Dashboard and API |
+| PostgreSQL | `127.0.0.1:5432` | State, tracing, task, and metadata storage |
+| Redis | `127.0.0.1:6379` | Cache, locks, and hot updates |
+| Milvus | `127.0.0.1:19530` | Vector knowledge base |
+| MinIO API | `127.0.0.1:9000` | Object storage |
+| MinIO Console | `http://127.0.0.1:9001` | Object storage UI |
+| Adminer | `http://127.0.0.1:8080` | Database UI |
+
+If a port is occupied, edit `.env`, for example:
+
+```env
+APP_PORT=18000
+PG_PORT=15432
+REDIS_PORT=16379
+ADMINER_PORT=18080
+```
+
+## Deployment Option 2: Direct Local Deployment
+
+### Windows One-Click Startup
+
+From the repository root:
 
 ```powershell
 .\start-p3394.cmd
 ```
 
-手动启动：
+Then open:
+
+```text
+http://127.0.0.1:8000/dashboard/p3394-agent
+```
+
+### Manual Windows Startup
 
 ```powershell
-$env:AGENTCLAW_PROJECT_DIR = "D:\codex\ui\agentclaw\local-demo"
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+Prepare model config if it does not exist:
+
+```powershell
+Copy-Item local-demo\models.example.json local-demo\models.json
+```
+
+Edit `local-demo\models.json`, or use the dashboard model settings after startup.
+
+Start the service:
+
+```powershell
+$env:AGENTCLAW_PROJECT_DIR = "$PWD\local-demo"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 .\.venv\Scripts\python.exe -X utf8 -m agentclaw.cli serve -d local-demo --host 127.0.0.1 --port 8000
 ```
 
-构建前端：
+### macOS / Linux Startup
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install --upgrade pip
+./.venv/bin/python -m pip install -e .
+cp local-demo/models.example.json local-demo/models.json
+AGENTCLAW_PROJECT_DIR="$PWD/local-demo" ./.venv/bin/python -X utf8 -m agentclaw.cli serve -d local-demo --host 127.0.0.1 --port 8000
+```
+
+## Model Configuration
+
+The real model config lives at:
+
+```text
+local-demo/models.json
+```
+
+The committed template is:
+
+```text
+local-demo/models.example.json
+```
+
+Docker Compose uses these `.env` variables through `models.example.json`:
+
+```env
+P3394_MODEL_NAME=gpt-4o-mini
+P3394_MODEL_BASE_URL=https://api.openai.com/v1
+P3394_MODEL_API_KEY=your-model-api-key
+```
+
+Direct deployment can edit `local-demo/models.json` directly:
+
+```json
+{
+  "default": "p3394_default",
+  "models": [
+    {
+      "id": "p3394_default",
+      "channel": "openai",
+      "type": "chat",
+      "model": "gpt-4o-mini",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "your-model-api-key"
+    }
+  ]
+}
+```
+
+Do not commit real `.env`, `models.json`, databases, logs, or runtime folders.
+
+## Project Structure
+
+```text
+.
+|-- Dockerfile
+|-- docker-compose.yml
+|-- .env.example
+|-- start-p3394.cmd
+|-- scripts/start-p3394.ps1
+|-- agentclaw/
+|   |-- admin-dashboard/
+|   |-- agent_square/p3394_runtime_agent/
+|   |-- api/
+|   |-- mcp/
+|-- local-demo/
+|   |-- agents/p3394_runtime_agent/
+|   |-- models.example.json
+|   |-- server.py
+|-- docs/
+|   |-- P3394-Agent-Platform.md
+|   |-- P3394-Runtime-Agent.md
+```
+
+## Common Commands
+
+Backend checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest agentclaw/test/unit/test_cli_init.py agentclaw/test/unit/test_docker_ports.py -q
+```
+
+Frontend checks:
+
+```powershell
+cd agentclaw\admin-dashboard
+npm test -- src/__tests__/p3394-model-diagnostics.spec.js src/__tests__/agent-square.spec.js src/__tests__/memory-graph.spec.js
+```
+
+Build frontend:
 
 ```powershell
 cd agentclaw\admin-dashboard
 npm run build
 ```
 
-运行 P3394 相关测试：
+Verify the P3394 API:
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest agentclaw/test/unit/test_dashboard_template_import.py agentclaw/test/api/test_admin_api_contracts.py::test_admin_template_library_repair_uses_service_dependency -q
-cd agentclaw\admin-dashboard
-npm test -- src/__tests__/p3394-model-diagnostics.spec.js src/__tests__/agent-square.spec.js
+```bash
+curl -H "Authorization: Bearer admin" http://127.0.0.1:8000/admin/p3394/artifacts
 ```
 
-## 配置模型
+## Troubleshooting
 
-编辑：
+### The dashboard asks for Admin Token
+
+Use:
 
 ```text
-local-demo/models.json
+admin
 ```
 
-也可以在前端的系统配置里填写模型。模型配置修改后建议重启本地服务。
+If you changed `.env`, use the value of `ADMIN_TOKEN`.
 
-## 后续方向
+### The model does not respond
 
+<<<<<<< HEAD
 - 把 P3394 任务历史、工具记录和文件上下文做成简洁侧栏。
 - 做一个初始化向导：检查模型、P3394 模板、命令工具、搜索工具是否可用。
 - 把 P3394 内部 Planner / Researcher / Executor / Reviewer 从“记录轨迹”升级为更真实的多 Agent 协作。
+=======
+Check:
+
+- `P3394_MODEL_API_KEY` or `local-demo/models.json` has a real key.
+- `P3394_MODEL_BASE_URL` is an OpenAI-compatible `/v1` endpoint when needed.
+- `P3394_MODEL_NAME` is available to your key.
+
+Restart after editing config.
+
+### Docker Compose says a port is already allocated
+
+Edit `.env` and change the conflicting port, then run:
+
+```bash
+docker compose up -d
+```
+
+### Knowledge base is unavailable
+
+For Docker Compose:
+
+```bash
+docker compose ps
+```
+
+Make sure `milvus`, `minio`, and `postgres` are running.
+
+For direct Windows deployment, use Docker/remote Milvus and configure `MILVUS_URI`, or use Docker Compose for the full stack.
+
+## Security Notes
+
+The default `ADMIN_TOKEN=admin` is for local use. Before exposing this service, change:
+
+```env
+ADMIN_TOKEN=change-me
+WORKFLOW_API_KEY=change-me
+MCP_TOKEN=change-me
+PG_PASSWORD=change-me
+MINIO_ROOT_PASSWORD=change-me
+```
+
+Use a private network, VPN, or reverse proxy authentication for shared deployments.
+>>>>>>> bdc9b72 (feat: add docker compose deployment)

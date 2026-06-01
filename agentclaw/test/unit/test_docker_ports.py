@@ -20,6 +20,19 @@ def test_docker_compose_uses_env_configurable_host_ports():
     assert '"${ADMINER_PORT:-8080}:8080"' in compose
 
 
+def test_root_compose_includes_p3394_app_and_infra_services():
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).resolve().parents[3] / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert {"app", "postgres", "redis", "etcd", "minio", "milvus", "adminer"} <= set(services)
+    assert services["app"]["build"]["dockerfile"] == "Dockerfile"
+    assert "${APP_PORT:-8000}:8000" in services["app"]["ports"]
+    assert services["app"]["environment"]["ADMIN_TOKEN"] == "${ADMIN_TOKEN:-admin}"
+    assert services["app"]["environment"]["MILVUS_URI"] == "http://milvus:19530"
+
+
 def test_docker_env_vars_include_all_infra_port_defaults(monkeypatch):
     for key in (
         "PG_PORT",

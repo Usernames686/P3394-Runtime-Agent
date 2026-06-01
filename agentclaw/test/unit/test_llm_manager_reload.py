@@ -106,3 +106,33 @@ def test_llm_manager_falls_back_to_first_model_when_default_aliases_are_empty(tm
     client, config = manager._get_current_client("fast")
     assert config.id == "model_1"
     assert client is manager._clients["model_1"]
+
+
+def test_llm_manager_expands_model_and_base_url_env_references(tmp_path, monkeypatch):
+    monkeypatch.setenv("P3394_MODEL_NAME", "env-model")
+    monkeypatch.setenv("P3394_MODEL_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("P3394_MODEL_API_KEY", "env-key")
+    models_path = tmp_path / "models.json"
+    models_path.write_text(
+        json.dumps(
+            {
+                "default": "model_1",
+                "models": [
+                    {
+                        "id": "model_1",
+                        "model": "${P3394_MODEL_NAME}",
+                        "base_url": "${P3394_MODEL_BASE_URL}",
+                        "api_key": "${P3394_MODEL_API_KEY}",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = LLMManager(config_path=str(models_path))
+    config = manager.get_model("model_1")
+
+    assert config.model == "env-model"
+    assert config.base_url == "https://example.test/v1"
+    assert config.api_key == "env-key"

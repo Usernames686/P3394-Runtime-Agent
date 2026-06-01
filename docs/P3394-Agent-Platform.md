@@ -33,7 +33,7 @@ http://127.0.0.1:8000/dashboard/p3394-agent
 Admin Token：
 
 ```text
-ac-admin-bc137b7f19f110bfdc0859ad6c1b0c5a
+admin
 ```
 
 ## 已包装内容

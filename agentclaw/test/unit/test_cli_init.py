@@ -25,3 +25,9 @@ def test_init_project_does_not_overwrite_existing_docker_compose(tmp_path: Path)
     cli._init_project(tmp_path, silent=True)
 
     assert compose_path.read_text(encoding="utf-8") == "name: custom\n"
+
+
+def test_default_env_uses_admin_token_for_local_dashboard():
+    content = cli._build_default_env_content()
+
+    assert "ADMIN_TOKEN=admin" in content

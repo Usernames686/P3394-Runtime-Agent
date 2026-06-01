@@ -33,9 +33,7 @@ def cli():
 
 
 def _generate_admin_token() -> str:
-    import secrets
-
-    return f"ac-admin-{secrets.token_hex(16)}"
+    return "admin"
 
 
 def _generate_workflow_api_key() -> str:

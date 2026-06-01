@@ -1,0 +1,148 @@
+name: p3394-runtime-agent
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: p3394-runtime-agent:local
+    env_file:
+      - .env
+    environment:
+      AGENTCLAW_PROJECT_DIR: /app/local-demo
+      PORT: 8000
+      HOST: 0.0.0.0
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-agentclaw}
+      PG_DATABASE: ${PG_DATABASE:-agentclaw}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-agentclaw}
+      MINIO_SECURE: "false"
+      MILVUS_URI: http://milvus:19530
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-admin}
+      WORKFLOW_API_KEY: ${WORKFLOW_API_KEY:-sk-local-workflow-key}
+      MCP_TOKEN: ${MCP_TOKEN:-mcp-local-token}
+      AGENTCLAW_DATA_DIR: /app/local-demo/.agentclaw-data
+      UPLOAD_DIR: /app/local-demo/.agentclaw-data/storage
+      KNOWLEDGEBASE_STORAGE_DIR: /app/local-demo/.agentclaw-data/knowledgebase
+      KNOWLEDGEBASE_PARSER_CACHE_DIR: /app/local-demo/.agentclaw-data/knowledgebase/parsed
+      LOG_CONSOLE_LEVEL: ${LOG_CONSOLE_LEVEL:-WARNING}
+      P3394_MODEL_API_KEY: ${P3394_MODEL_API_KEY:-}
+      P3394_MODEL_BASE_URL: ${P3394_MODEL_BASE_URL:-}
+      P3394_MODEL_NAME: ${P3394_MODEL_NAME:-gpt-4o-mini}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - p3394-app-data:/app/local-demo/.agentclaw-data
+      - p3394-logs:/app/local-demo/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-agentclaw}
+      POSTGRES_DB: ${PG_DATABASE:-agentclaw}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - p3394-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DATABASE:-agentclaw}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - p3394-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: >
+      etcd
+      -advertise-client-urls=http://127.0.0.1:2379
+      -listen-client-urls=http://0.0.0.0:2379
+      --data-dir=/etcd
+    volumes:
+      - p3394-etcd:/etcd
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: minio server /minio_data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - p3394-minio:/minio_data
+    restart: unless-stopped
+
+  milvus:
+    image: milvusdb/milvus:v2.5.7
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_HTTP_PORT:-9091}:9091"
+    volumes:
+      - p3394-milvus:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_started
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  p3394-app-data:
+  p3394-logs:
+  p3394-postgres:
+  p3394-redis:
+  p3394-etcd:
+  p3394-minio:
+  p3394-milvus:

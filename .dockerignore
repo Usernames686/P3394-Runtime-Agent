@@ -43,6 +43,15 @@ uv.lock
 .env
 .env.*
 !.env.example
+models.json
+local-demo/.env
+local-demo/models.json
+local-demo/.agentclaw/
+local-demo/logs/
+local-demo/*.log
+local-demo/*.err
+local-demo/*.pid
+local-demo/__pycache__/
 
 # 上传文件
 .uploads/
