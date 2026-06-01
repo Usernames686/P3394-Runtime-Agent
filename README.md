@@ -1,5 +1,5 @@
 # P3394 Agent Platform
-
+本项目基于 [`Negai-ai/AgentClaw`](https://github.com/Negai-ai/AgentClaw) 二次开发
 P3394 Agent Platform 是一个本地通用智能体平台。它基于 AgentClaw 二次包装，把 P3394 Runtime Agent 作为默认主智能体，保留 AgentClaw 的工作流、模型调用、工具执行、模板库、管理 API 和原生聊天界面。
 
 当前目标不是从 0 重写一个 Agent 框架，而是在已经跑通的 AgentClaw 底座上，包装成你自己的 P3394 智能体项目。
